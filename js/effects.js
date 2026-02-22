@@ -256,7 +256,21 @@ function formatDate(dateStr) {
   return d.toLocaleDateString();
 }
 
-// Vote tracking in localStorage
+// ---- URL / LINK FILTER ----
+function containsLink(text) {
+  const patterns = [
+    /https?:\/\//i,
+    /www\./i,
+    /\.[a-z]{2,6}(\/|\s|$)/i,
+    /\(dot\)/i, /\[dot\]/i, /\{dot\}/i,
+    /\(\.)/i, /\[\.\]/i,
+    / dot /i,
+    /\w+\s*\.\s*(com|net|org|io|co|gg|me|tv|info|biz|xyz|site|vip|dev|app)\b/i,
+  ];
+  return patterns.some(p => p.test(text));
+}
+
+// ---- VOTE TRACKING ----
 function getVotes() {
   try { return JSON.parse(localStorage.getItem('yarghle_votes') || '{}'); }
   catch (e) { return {}; }
@@ -267,7 +281,118 @@ function saveVote(threadId, direction) {
   try { localStorage.setItem('yarghle_votes', JSON.stringify(votes)); } catch(e) {}
 }
 
-// State
+// ---- MOD SESSION ----
+function getModSession() {
+  try { return JSON.parse(localStorage.getItem('yarghle_mod') || 'null'); }
+  catch (e) { return null; }
+}
+function saveModSession(session) {
+  try { localStorage.setItem('yarghle_mod', JSON.stringify(session)); } catch(e) {}
+}
+function clearModSession() {
+  try { localStorage.removeItem('yarghle_mod'); } catch(e) {}
+}
+function isMod() {
+  const s = getModSession();
+  return s && (s.role === 'mod' || s.role === 'owner');
+}
+function isOwner() {
+  const s = getModSession();
+  return s && s.role === 'owner';
+}
+
+function roleBadge(role) {
+  if (role === 'owner') return '<span class="role-badge owner">👑 OWNER</span>';
+  if (role === 'mod') return '<span class="role-badge mod">⚔️ MOD</span>';
+  return '';
+}
+
+function updateModUI() {
+  const session = getModSession();
+  const loginBtn = document.getElementById('modLoginToggle');
+  const loggedInInfo = document.getElementById('modLoggedInInfo');
+
+  if (session) {
+    if (loginBtn) loginBtn.textContent = '🚪 LOGOUT';
+    if (loggedInInfo) {
+      loggedInInfo.style.display = 'flex';
+      loggedInInfo.innerHTML = `${roleBadge(session.role)} ${sanitize(session.display_name)}`;
+    }
+  } else {
+    if (loginBtn) loginBtn.textContent = '🔑 MOD LOGIN';
+    if (loggedInInfo) loggedInInfo.style.display = 'none';
+  }
+}
+
+function toggleModLogin() {
+  const session = getModSession();
+  if (session) {
+    clearModSession();
+    updateModUI();
+    document.getElementById('modLoginPanel')?.classList.remove('visible');
+    // Re-render to hide delete buttons
+    renderThreads(allThreads);
+    if (currentThreadId) openThread(currentThreadId);
+    return;
+  }
+  document.getElementById('modLoginPanel')?.classList.toggle('visible');
+}
+
+async function modLogin() {
+  const code = document.getElementById('modInviteCode')?.value.trim();
+  const nameField = document.getElementById('modDisplayName');
+  const errorDiv = document.getElementById('modLoginError');
+  if (errorDiv) errorDiv.innerHTML = '';
+
+  if (!code) { if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Enter an invite code!</div>'; return; }
+  if (!supabaseClient) return;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('mod_accounts')
+      .select('*')
+      .eq('invite_code', code)
+      .single();
+
+    if (error || !data) {
+      if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Invalid invite code!</div>';
+      return;
+    }
+
+    // If unclaimed, need display name
+    if (!data.is_claimed) {
+      const name = nameField?.value.trim();
+      if (!name) {
+        nameField.style.display = 'block';
+        if (errorDiv) errorDiv.innerHTML = '<div class="filter-warning">Code accepted! Now choose your display name above.</div>';
+        return;
+      }
+      // Claim the account
+      await supabaseClient
+        .from('mod_accounts')
+        .update({ display_name: name, is_claimed: true })
+        .eq('id', data.id);
+      data.display_name = name;
+    }
+
+    // Save session
+    saveModSession({ code: data.invite_code, display_name: data.display_name, role: data.role });
+    updateModUI();
+    document.getElementById('modLoginPanel')?.classList.remove('visible');
+    document.getElementById('modInviteCode').value = '';
+    if (nameField) { nameField.value = ''; nameField.style.display = 'none'; }
+
+    // Re-render to show delete buttons
+    renderThreads(allThreads);
+    if (currentThreadId) openThread(currentThreadId);
+
+  } catch (e) {
+    console.error('Mod login error:', e);
+    if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Login failed. Try again!</div>';
+  }
+}
+
+// ---- STATE ----
 let allThreads = [];
 let currentThreadId = null;
 
@@ -285,12 +410,9 @@ async function loadThreads() {
       .limit(100);
 
     if (error) throw error;
-
     allThreads = data || [];
     renderThreads(allThreads);
-
     if (countEl) countEl.textContent = allThreads.length + ' thread' + (allThreads.length !== 1 ? 's' : '') + ' in the tavern';
-
   } catch (e) {
     console.error('Load threads error:', e);
     container.innerHTML = '<div class="forum-empty" style="color: var(--sketch-red);">Failed to load threads. Try refreshing!</div>';
@@ -301,6 +423,7 @@ function renderThreads(threads) {
   const container = document.getElementById('forumThreadList');
   if (!container) return;
   const votes = getVotes();
+  const canDelete = isMod();
 
   if (!threads || threads.length === 0) {
     container.innerHTML = '<div class="forum-empty">No threads yet... Be the first pirate to post! 🏴‍☠️</div>';
@@ -311,6 +434,10 @@ function renderThreads(threads) {
     const score = (t.upvotes || 0) - (t.downvotes || 0);
     const myVote = votes[t.id] || null;
     const preview = t.message.length > 120 ? t.message.substring(0, 120) + '...' : t.message;
+    const badge = roleBadge(t.role);
+    const deleteBtn = canDelete
+      ? `<button class="delete-btn" onclick="event.stopPropagation(); deleteThread(${t.id})">🗑️ Delete</button>`
+      : '';
     return `
       <div class="thread-item" onclick="openThread(${t.id})">
         <div class="thread-votes" onclick="event.stopPropagation()">
@@ -319,11 +446,12 @@ function renderThreads(threads) {
           <button class="vote-btn ${myVote === 'down' ? 'downvoted' : ''}" onclick="event.stopPropagation(); voteThread(${t.id}, 'down')">▼</button>
         </div>
         <div class="thread-content">
-          <div class="thread-title">${sanitize(t.title)}</div>
+          <div class="thread-title">${sanitize(t.title)} ${badge}</div>
           <div class="thread-meta">
             <span>🏴‍☠️ ${sanitize(t.username)}</span>
             <span>${formatDate(t.created_at)}</span>
             <span>💬 ${t.comment_count || 0}</span>
+            ${deleteBtn}
           </div>
           <div class="thread-preview">${sanitize(preview)}</div>
         </div>
@@ -350,16 +478,27 @@ function toggleNewThread() {
 }
 
 async function submitThread() {
-  const username = document.getElementById('threadUsername')?.value.trim();
+  const usernameEl = document.getElementById('threadUsername');
   const title = document.getElementById('threadTitle')?.value.trim();
   const message = document.getElementById('threadMessage')?.value.trim();
   const errorDiv = document.getElementById('threadError');
   const btn = document.getElementById('threadSubmitBtn');
+  const session = getModSession();
+
+  // If mod is logged in, use their display name
+  let username = session ? session.display_name : usernameEl?.value.trim();
+  let role = session ? session.role : null;
 
   if (errorDiv) errorDiv.innerHTML = '';
   if (!username) { if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Ye need a pirate name!</div>'; return; }
   if (!title) { if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Give yer thread a title!</div>'; return; }
   if (!message) { if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Write something!</div>'; return; }
+
+  // URL filter
+  if (containsLink(title) || containsLink(message)) {
+    if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">⚠️ Links and URLs are not allowed in posts!</div>';
+    return;
+  }
   if (!supabaseClient) return;
 
   btn.disabled = true;
@@ -368,10 +507,10 @@ async function submitThread() {
   try {
     const { error } = await supabaseClient
       .from('forum_threads')
-      .insert([{ username, title, message }]);
+      .insert([{ username, title, message, role }]);
     if (error) throw error;
 
-    document.getElementById('threadUsername').value = '';
+    if (usernameEl) usernameEl.value = '';
     document.getElementById('threadTitle').value = '';
     document.getElementById('threadMessage').value = '';
     document.getElementById('newThreadForm').classList.remove('visible');
@@ -390,39 +529,60 @@ async function voteThread(threadId, direction) {
   if (!supabaseClient) return;
   const votes = getVotes();
   const current = votes[threadId];
-
-  // Find thread in our cache
   const thread = allThreads.find(t => t.id === threadId);
   if (!thread) return;
 
   let upDelta = 0, downDelta = 0;
-
   if (current === direction) {
-    // Undo vote
-    if (direction === 'up') upDelta = -1;
-    else downDelta = -1;
+    if (direction === 'up') upDelta = -1; else downDelta = -1;
     saveVote(threadId, null);
   } else {
-    // New or changed vote
     if (current === 'up') upDelta = -1;
     if (current === 'down') downDelta = -1;
-    if (direction === 'up') upDelta += 1;
-    else downDelta += 1;
+    if (direction === 'up') upDelta += 1; else downDelta += 1;
     saveVote(threadId, direction);
   }
 
-  // Optimistic UI update
   thread.upvotes = (thread.upvotes || 0) + upDelta;
   thread.downvotes = (thread.downvotes || 0) + downDelta;
   renderThreads(allThreads);
 
-  // Persist to DB
   try {
     await supabaseClient
       .from('forum_threads')
       .update({ upvotes: thread.upvotes, downvotes: thread.downvotes })
       .eq('id', threadId);
   } catch (e) { console.error('Vote error:', e); }
+}
+
+// ---- DELETE ----
+async function deleteThread(threadId) {
+  if (!isMod() || !supabaseClient) return;
+  if (!confirm('Delete this thread and all its comments?')) return;
+
+  try {
+    await supabaseClient.from('forum_comments').delete().eq('thread_id', threadId);
+    await supabaseClient.from('forum_threads').delete().eq('id', threadId);
+    allThreads = allThreads.filter(t => t.id !== threadId);
+    renderThreads(allThreads);
+    if (currentThreadId === threadId) showThreadList();
+  } catch (e) { console.error('Delete thread error:', e); }
+}
+
+async function deleteComment(commentId) {
+  if (!isMod() || !supabaseClient || !currentThreadId) return;
+  if (!confirm('Delete this comment?')) return;
+
+  try {
+    await supabaseClient.from('forum_comments').delete().eq('id', commentId);
+    // Decrement comment count
+    const thread = allThreads.find(t => t.id === currentThreadId);
+    if (thread && thread.comment_count > 0) {
+      thread.comment_count--;
+      await supabaseClient.from('forum_threads').update({ comment_count: thread.comment_count }).eq('id', currentThreadId);
+    }
+    await loadComments(currentThreadId);
+  } catch (e) { console.error('Delete comment error:', e); }
 }
 
 // ---- OPEN THREAD ----
@@ -438,18 +598,36 @@ async function openThread(threadId) {
   const votes = getVotes();
   const myVote = votes[threadId] || null;
   const score = (thread.upvotes || 0) - (thread.downvotes || 0);
+  const badge = roleBadge(thread.role);
+  const canDelete = isMod();
+  const deleteBtn = canDelete
+    ? `<button class="delete-btn" onclick="deleteThread(${threadId})" style="margin-top: 10px;">🗑️ Delete Thread</button>`
+    : '';
 
   document.getElementById('threadDetailContent').innerHTML = `
     <div class="thread-detail-post">
-      <div class="thread-detail-title">${sanitize(thread.title)}</div>
+      <div class="thread-detail-title">${sanitize(thread.title)} ${badge}</div>
       <div class="thread-detail-meta">🏴‍☠️ ${sanitize(thread.username)} · ${formatDate(thread.created_at)}</div>
       <div class="thread-detail-body">${sanitize(thread.message)}</div>
-      <div class="thread-votes" style="flex-direction: row; gap: 10px; margin-top: 10px;">
-        <button class="vote-btn ${myVote === 'up' ? 'upvoted' : ''}" onclick="voteThread(${threadId}, 'up'); openThread(${threadId});">▲</button>
-        <span class="vote-score ${score < 0 ? 'negative' : ''}">${score}</span>
-        <button class="vote-btn ${myVote === 'down' ? 'downvoted' : ''}" onclick="voteThread(${threadId}, 'down'); openThread(${threadId});">▼</button>
+      <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+        <div class="thread-votes" style="flex-direction: row; gap: 10px;">
+          <button class="vote-btn ${myVote === 'up' ? 'upvoted' : ''}" onclick="voteThread(${threadId}, 'up'); openThread(${threadId});">▲</button>
+          <span class="vote-score ${score < 0 ? 'negative' : ''}">${score}</span>
+          <button class="vote-btn ${myVote === 'down' ? 'downvoted' : ''}" onclick="voteThread(${threadId}, 'down'); openThread(${threadId});">▼</button>
+        </div>
+        ${deleteBtn}
       </div>
     </div>`;
+
+  // If mod logged in, pre-fill username fields
+  const session = getModSession();
+  const commentUser = document.getElementById('commentUsername');
+  if (session && commentUser) {
+    commentUser.value = session.display_name;
+    commentUser.readOnly = true;
+  } else if (commentUser) {
+    commentUser.readOnly = false;
+  }
 
   await loadComments(threadId);
 }
@@ -477,22 +655,26 @@ async function loadComments(threadId) {
       .limit(100);
 
     if (error) throw error;
-
     if (header) header.textContent = '💬 COMMENTS (' + (data?.length || 0) + ')';
+    const canDelete = isMod();
 
     if (!data || data.length === 0) {
       container.innerHTML = '<div class="forum-empty" style="padding: 20px; font-size: 10px;">No comments yet. Be the first!</div>';
       return;
     }
 
-    container.innerHTML = data.map(c => `
+    container.innerHTML = data.map(c => {
+      const badge = roleBadge(c.role);
+      const del = canDelete ? `<button class="delete-btn" onclick="deleteComment(${c.id})" style="font-size: 10px; padding: 2px 6px;">🗑️</button>` : '';
+      return `
       <div class="comment-item">
         <div class="comment-header">
-          <span class="comment-username">🏴‍☠️ ${sanitize(c.username)}</span>
-          <span>${formatDate(c.created_at)}</span>
+          <span><span class="comment-username">🏴‍☠️ ${sanitize(c.username)}</span> ${badge}</span>
+          <span style="display: flex; align-items: center; gap: 8px;">${formatDate(c.created_at)} ${del}</span>
         </div>
         <div class="comment-body">${sanitize(c.message)}</div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
 
   } catch (e) {
     console.error('Load comments error:', e);
@@ -501,14 +683,24 @@ async function loadComments(threadId) {
 }
 
 async function submitComment() {
-  const username = document.getElementById('commentUsername')?.value.trim();
+  const usernameEl = document.getElementById('commentUsername');
   const message = document.getElementById('commentMessage')?.value.trim();
   const errorDiv = document.getElementById('commentError');
   const btn = document.getElementById('commentSubmitBtn');
+  const session = getModSession();
+
+  let username = session ? session.display_name : usernameEl?.value.trim();
+  let role = session ? session.role : null;
 
   if (errorDiv) errorDiv.innerHTML = '';
   if (!username) { if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Ye need a name!</div>'; return; }
   if (!message) { if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Write a comment!</div>'; return; }
+
+  // URL filter
+  if (containsLink(message)) {
+    if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">⚠️ Links and URLs are not allowed in comments!</div>';
+    return;
+  }
   if (!supabaseClient || !currentThreadId) return;
 
   btn.disabled = true;
@@ -517,17 +709,13 @@ async function submitComment() {
   try {
     const { error } = await supabaseClient
       .from('forum_comments')
-      .insert([{ thread_id: currentThreadId, username, message }]);
+      .insert([{ thread_id: currentThreadId, username, message, role }]);
     if (error) throw error;
 
-    // Update comment count
     const thread = allThreads.find(t => t.id === currentThreadId);
     if (thread) {
       thread.comment_count = (thread.comment_count || 0) + 1;
-      await supabaseClient
-        .from('forum_threads')
-        .update({ comment_count: thread.comment_count })
-        .eq('id', currentThreadId);
+      await supabaseClient.from('forum_threads').update({ comment_count: thread.comment_count }).eq('id', currentThreadId);
     }
 
     document.getElementById('commentMessage').value = '';
@@ -543,5 +731,13 @@ async function submitComment() {
 
 // ---- INIT ----
 document.addEventListener('DOMContentLoaded', () => {
+  updateModUI();
   loadThreads();
+  // If mod logged in, pre-fill thread username
+  const session = getModSession();
+  const threadUser = document.getElementById('threadUsername');
+  if (session && threadUser) {
+    threadUser.value = session.display_name;
+    threadUser.readOnly = true;
+  }
 });
