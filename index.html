@@ -457,6 +457,50 @@
   }
   .forum-count { text-align: center; margin-bottom: 15px; font-size: 11px; color: #555; font-family: 'Press Start 2P', monospace; }
 
+  /* ROLE BADGES */
+  .role-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-family: 'Press Start 2P', monospace;
+    font-size: 8px; letter-spacing: 1px; margin-left: 8px; vertical-align: middle;
+  }
+  .role-badge.owner { background: linear-gradient(135deg, #ffd700, #ff8c00); color: #000; }
+  .role-badge.mod { background: linear-gradient(135deg, var(--neon-cyan), #0088ff); color: #000; }
+
+  /* MOD LOGIN */
+  .mod-login-bar {
+    display: flex; justify-content: flex-end; align-items: center; gap: 10px;
+    margin-bottom: 15px; flex-wrap: wrap;
+  }
+  .mod-login-btn {
+    padding: 6px 14px; font-family: 'Bangers', cursive; font-size: 14px;
+    color: var(--neon-cyan); background: rgba(0,255,255,0.08); border: 1px solid rgba(0,255,255,0.3);
+    border-radius: 6px; cursor: pointer; transition: all 0.3s;
+  }
+  .mod-login-btn:hover { background: rgba(0,255,255,0.15); }
+  .mod-logged-in {
+    font-family: 'Press Start 2P', monospace; font-size: 10px; color: var(--neon-green);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .mod-login-panel {
+    background: linear-gradient(145deg, #1a1a4e, #0d0d2b);
+    border: 2px solid var(--neon-cyan); border-radius: 12px; padding: 20px; margin-bottom: 20px; display: none;
+  }
+  .mod-login-panel.visible { display: block; }
+  .mod-login-panel h3 { font-family: 'Bangers', cursive; font-size: 20px; color: var(--neon-cyan); margin-bottom: 12px; }
+
+  /* DELETE BUTTONS */
+  .delete-btn {
+    background: none; border: 1px solid rgba(255,0,0,0.3); color: #ff4444; padding: 4px 10px;
+    border-radius: 4px; cursor: pointer; font-size: 11px; font-family: 'Comic Neue', cursive;
+    transition: all 0.2s;
+  }
+  .delete-btn:hover { background: rgba(255,0,0,0.15); border-color: #ff4444; }
+
+  /* CONTENT FILTER WARNING */
+  .filter-warning {
+    background: rgba(255,165,0,0.1); border: 1px solid orange; border-radius: 8px;
+    padding: 10px 15px; color: orange; font-size: 13px; margin-bottom: 10px;
+  }
+
   @media (max-width: 600px) {
     .products { grid-template-columns: 1fr; }
     .testimonial-grid { grid-template-columns: 1fr; }
@@ -465,6 +509,7 @@
     .forum-toolbar { flex-direction: column; }
     .thread-item { flex-direction: column; }
     .thread-votes { flex-direction: row; }
+    .mod-login-bar { justify-content: center; }
   }
 </style>
 </head>
@@ -600,6 +645,20 @@
 <div class="main-content">
   <div class="forum-container">
     <h2>💬 YARGHLE'S TAVERN 💬</h2>
+
+    <!-- MOD LOGIN BAR -->
+    <div class="mod-login-bar" id="modLoginBar">
+      <div class="mod-logged-in" id="modLoggedInInfo" style="display: none;"></div>
+      <button class="mod-login-btn" id="modLoginToggle" onclick="toggleModLogin()">🔑 MOD LOGIN</button>
+    </div>
+
+    <div class="mod-login-panel" id="modLoginPanel">
+      <h3>🔑 MOD / OWNER LOGIN</h3>
+      <input type="text" class="forum-input" id="modInviteCode" placeholder="Enter your invite code..." maxlength="50">
+      <input type="text" class="forum-input" id="modDisplayName" placeholder="Choose your display name..." maxlength="30" style="display: none;" id="modNameField">
+      <button class="forum-submit" style="font-size: 16px; padding: 10px 20px;" onclick="modLogin()">🏴‍☠️ LOGIN</button>
+      <div id="modLoginError" style="margin-top: 10px;"></div>
+    </div>
 
     <!-- THREAD LIST VIEW -->
     <div id="forumListView">
