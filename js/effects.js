@@ -184,7 +184,7 @@ async function fetchVisitorCount() {
     const resp = await fetch('https://mlakarboyz.goatcounter.com/counter/%2f.json');
     if (resp.ok) {
       const data = await resp.json();
-      el.textContent = data.count; // GoatCounter returns pre-formatted count
+      el.textContent = data.count;
     } else {
       el.textContent = '???';
     }
@@ -193,7 +193,6 @@ async function fetchVisitorCount() {
   }
 }
 fetchVisitorCount();
-// Refresh every 30 seconds
 setInterval(fetchVisitorCount, 30000);
 
 // ============ UNITS LEFT ============
@@ -241,3 +240,125 @@ function closePopup() {
   document.getElementById('loadingFill').style.width = '0%';
   document.getElementById('loadingText').textContent = '0%';
 }
+
+// ============ FORUM (Supabase) ============
+
+function sanitize(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diff = (now - d) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
+  return d.toLocaleDateString();
+}
+
+async function loadForumPosts() {
+  const container = document.getElementById('forumPosts');
+  const loading = document.getElementById('forumLoading');
+  const countEl = document.getElementById('forumPostCount');
+  if (!container) return;
+
+  if (typeof supabaseClient === 'undefined' || !supabaseClient) {
+    if (loading) loading.innerHTML = '<span style="color: var(--sketch-red);">Forum loading... refresh if this persists.</span>';
+    return;
+  }
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('forum_posts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+
+    if (loading) loading.style.display = 'none';
+
+    if (!data || data.length === 0) {
+      container.innerHTML = '<div class="forum-empty">No messages yet... Be the first pirate to post! 🏴‍☠️</div>';
+      if (countEl) countEl.textContent = '0 messages';
+      return;
+    }
+
+    if (countEl) countEl.textContent = data.length + ' message' + (data.length !== 1 ? 's' : '') + ' in the tavern';
+
+    container.innerHTML = data.map(post => `
+      <div class="forum-post">
+        <div class="forum-post-header">
+          <span class="forum-post-username">🏴‍☠️ ${sanitize(post.username)}</span>
+          <span class="forum-post-date">${formatDate(post.created_at)}</span>
+        </div>
+        <div class="forum-post-body">${sanitize(post.message)}</div>
+      </div>
+    `).join('');
+
+  } catch (e) {
+    console.error('Forum load error:', e);
+    if (loading) loading.innerHTML = '<span style="color: var(--sketch-red);">Failed to load messages. Try refreshing!</span>';
+  }
+}
+
+async function submitForumPost() {
+  const usernameEl = document.getElementById('forumUsername');
+  const messageEl = document.getElementById('forumMessage');
+  const submitBtn = document.getElementById('forumSubmitBtn');
+  const errorDiv = document.getElementById('forumError');
+
+  if (!usernameEl || !messageEl) return;
+
+  const username = usernameEl.value.trim();
+  const message = messageEl.value.trim();
+
+  if (errorDiv) errorDiv.innerHTML = '';
+
+  if (!username) {
+    if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Ye need a pirate name, matey!</div>';
+    usernameEl.focus();
+    return;
+  }
+  if (!message) {
+    if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Write something before posting!</div>';
+    messageEl.focus();
+    return;
+  }
+
+  if (typeof supabaseClient === 'undefined' || !supabaseClient) {
+    if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Forum not ready — try refreshing!</div>';
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = '⏳ POSTING...';
+
+  try {
+    const { error } = await supabaseClient
+      .from('forum_posts')
+      .insert([{ username: username, message: message }]);
+
+    if (error) throw error;
+
+    usernameEl.value = '';
+    messageEl.value = '';
+    await loadForumPosts();
+
+  } catch (e) {
+    console.error('Forum post error:', e);
+    if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Failed to post: ' + sanitize(e.message) + '</div>';
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = '🏴‍☠️ POST TO THE TAVERN';
+  }
+}
+
+// Load forum when page is ready
+document.addEventListener('DOMContentLoaded', () => {
+  loadForumPosts();
+});
