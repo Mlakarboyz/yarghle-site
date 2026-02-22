@@ -328,6 +328,63 @@
   .footer .fake-trust span { display: flex; align-items: center; gap: 5px; }
   .fine-print { font-size: 8px; color: #333; margin-top: 30px; line-height: 1.4; max-width: 600px; margin-left: auto; margin-right: auto; }
 
+  /* FORUM TAB */
+  .forum-section { max-width: 750px; margin: 0 auto; }
+  .forum-section h2 {
+    font-family: 'Bangers', cursive; font-size: 42px; color: var(--neon-cyan);
+    text-shadow: 3px 3px 0 var(--neon-pink); margin-bottom: 20px; text-align: center;
+  }
+  .forum-post-form {
+    background: linear-gradient(145deg, #1a1a4e, #0d0d2b);
+    border: 2px solid var(--neon-green); border-radius: 12px; padding: 20px; margin-bottom: 25px;
+  }
+  .forum-post-form h3 {
+    font-family: 'Bangers', cursive; font-size: 22px; color: var(--neon-green); margin-bottom: 15px;
+  }
+  .forum-input {
+    width: 100%; padding: 12px 15px; margin-bottom: 12px; border-radius: 8px;
+    border: 2px solid #333; background: #111; color: white;
+    font-family: 'Comic Neue', cursive; font-size: 15px; transition: border-color 0.3s;
+  }
+  .forum-input:focus { outline: none; border-color: var(--neon-green); box-shadow: 0 0 10px rgba(57, 255, 20, 0.2); }
+  .forum-input::placeholder { color: #555; }
+  textarea.forum-input { min-height: 100px; resize: vertical; }
+  .forum-submit {
+    padding: 12px 30px; font-family: 'Bangers', cursive; font-size: 20px; letter-spacing: 2px;
+    color: #000; background: linear-gradient(135deg, var(--neon-green), var(--neon-cyan));
+    border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s;
+    box-shadow: 0 4px 15px rgba(57, 255, 20, 0.3);
+  }
+  .forum-submit:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(57, 255, 20, 0.5); }
+  .forum-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .forum-posts { display: flex; flex-direction: column; gap: 15px; }
+  .forum-post {
+    background: linear-gradient(145deg, #1a1a4e, #0d0d2b);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 18px; transition: border-color 0.3s;
+  }
+  .forum-post:hover { border-color: var(--neon-cyan); }
+  .forum-post-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .forum-post-username { font-family: 'Bangers', cursive; font-size: 18px; color: var(--neon-pink); letter-spacing: 1px; }
+  .forum-post-date { font-size: 11px; color: #555; font-family: 'Press Start 2P', monospace; }
+  .forum-post-body { color: #ccc; line-height: 1.6; font-size: 15px; word-wrap: break-word; }
+  .forum-empty {
+    text-align: center; padding: 40px; color: #555;
+    font-family: 'Press Start 2P', monospace; font-size: 12px;
+  }
+  .forum-loading { text-align: center; padding: 30px; color: var(--neon-green); }
+  .forum-error {
+    text-align: center; padding: 15px; background: rgba(255,0,0,0.1);
+    border: 1px solid var(--sketch-red); border-radius: 8px; color: var(--sketch-red);
+    margin-bottom: 15px; font-size: 14px;
+  }
+  .forum-post-count {
+    text-align: center; margin-bottom: 15px; font-size: 12px;
+    color: #555; font-family: 'Press Start 2P', monospace;
+  }
+
   @media (max-width: 600px) {
     .products { grid-template-columns: 1fr; }
     .testimonial-grid { grid-template-columns: 1fr; }
@@ -354,6 +411,7 @@
 <nav class="tab-nav">
   <button class="tab-btn active" onclick="switchTab('deals', this)">🛒 FREE DEALS</button>
   <button class="tab-btn" onclick="switchTab('about', this)">🏴‍☠️ ABOUT ME</button>
+  <button class="tab-btn" onclick="switchTab('forum', this)">💬 TAVERN</button>
   <button class="tab-btn" onclick="switchTab('sound', this)">🔊 CRINKLE</button>
 </nav>
 
@@ -462,7 +520,32 @@
 </div>
 </div>
 
-<!-- ===== TAB 3: SOUND ===== -->
+<!-- ===== TAB 3: FORUM ===== -->
+<div class="tab-content" id="tab-forum">
+<div class="main-content">
+  <div class="forum-section">
+    <h2>💬 YARGHLE'S TAVERN 💬</h2>
+    <p style="text-align: center; color: #888; margin-bottom: 25px;">
+      Welcome aboard, matey! Leave a message for Captain Yarghle and the crew.
+    </p>
+
+    <div class="forum-post-form">
+      <h3>📝 POST A MESSAGE</h3>
+      <input type="text" class="forum-input" id="forumUsername" placeholder="Your pirate name..." maxlength="30">
+      <textarea class="forum-input" id="forumMessage" placeholder="Speak yer mind, landlubber..." maxlength="500"></textarea>
+      <button class="forum-submit" id="forumSubmitBtn" onclick="submitForumPost()">🏴‍☠️ POST TO THE TAVERN</button>
+    </div>
+
+    <div class="forum-post-count" id="forumPostCount"></div>
+    <div id="forumError"></div>
+    <div class="forum-posts" id="forumPosts">
+      <div class="forum-loading" id="forumLoading">Loading messages from the seven seas... ⏳</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ===== TAB 4: SOUND ===== -->
 <div class="tab-content" id="tab-sound">
 <div class="main-content">
   <div class="sound-section">
@@ -514,6 +597,14 @@
 
 <!-- GoatCounter Analytics -->
 <script data-goatcounter="https://mlakarboyz.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+
+<!-- Supabase JS client -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPABASE_URL = 'https://ulzvofufteyvowpgpzsf.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_m0QBHdxwUYvTXvR5jaKX5w_PVtcKKoI';
+  const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+</script>
 
 <script src="js/effects.js"></script>
 </body>
