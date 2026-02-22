@@ -263,7 +263,7 @@ function containsLink(text) {
     /www\./i,
     /\.[a-z]{2,6}(\/|\s|$)/i,
     /\(dot\)/i, /\[dot\]/i, /\{dot\}/i,
-    /\(\.)/i, /\[\.\]/i,
+    /\(\.\)/i, /\[\.\]/i,
     / dot /i,
     /\w+\s*\.\s*(com|net|org|io|co|gg|me|tv|info|biz|xyz|site|vip|dev|app)\b/i,
   ];
