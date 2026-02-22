@@ -176,13 +176,25 @@ setInterval(() => {
   if (totalSeconds < 0) totalSeconds = 5 * 60;
 }, 1000);
 
-// ============ VISITOR COUNT GOES BRRR ============
-let visitors = 4208337;
-setInterval(() => {
-  visitors += Math.floor(Math.random() * 500) + 100;
+// ============ REAL VISITOR COUNT (GoatCounter) ============
+async function fetchVisitorCount() {
   const el = document.getElementById('visitorCount');
-  if (el) el.textContent = visitors.toLocaleString();
-}, 150);
+  if (!el) return;
+  try {
+    const resp = await fetch('https://mlakarboyz.goatcounter.com/counter/%2f.json');
+    if (resp.ok) {
+      const data = await resp.json();
+      el.textContent = data.count; // GoatCounter returns pre-formatted count
+    } else {
+      el.textContent = '???';
+    }
+  } catch (e) {
+    el.textContent = '???';
+  }
+}
+fetchVisitorCount();
+// Refresh every 30 seconds
+setInterval(fetchVisitorCount, 30000);
 
 // ============ UNITS LEFT ============
 setInterval(() => {
