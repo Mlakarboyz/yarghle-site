@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="favicon.ico">
-<title>YarghleDeals.biz - FREE RAM & MONEY Downloads!!!</title>
+<title>YarghleDeals.vip - FREE RAM & MONEY Downloads!!!</title>
 <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -329,67 +329,142 @@
   .fine-print { font-size: 8px; color: #333; margin-top: 30px; line-height: 1.4; max-width: 600px; margin-left: auto; margin-right: auto; }
 
   /* FORUM TAB */
-  .forum-section { max-width: 750px; margin: 0 auto; }
-  .forum-section h2 {
+  .forum-container { max-width: 750px; margin: 0 auto; }
+  .forum-container h2 {
     font-family: 'Bangers', cursive; font-size: 42px; color: var(--neon-cyan);
     text-shadow: 3px 3px 0 var(--neon-pink); margin-bottom: 20px; text-align: center;
   }
-  .forum-post-form {
-    background: linear-gradient(145deg, #1a1a4e, #0d0d2b);
-    border: 2px solid var(--neon-green); border-radius: 12px; padding: 20px; margin-bottom: 25px;
+  .forum-toolbar {
+    display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;
   }
-  .forum-post-form h3 {
-    font-family: 'Bangers', cursive; font-size: 22px; color: var(--neon-green); margin-bottom: 15px;
+  .forum-search {
+    flex: 1; min-width: 200px; padding: 12px 15px; border-radius: 8px;
+    border: 2px solid #333; background: #111; color: white;
+    font-family: 'Comic Neue', cursive; font-size: 15px;
   }
+  .forum-search:focus { outline: none; border-color: var(--neon-cyan); box-shadow: 0 0 10px rgba(0,255,255,0.2); }
+  .forum-search::placeholder { color: #555; }
+  .forum-new-btn {
+    padding: 12px 24px; font-family: 'Bangers', cursive; font-size: 18px; letter-spacing: 1px;
+    color: #000; background: linear-gradient(135deg, var(--neon-green), var(--neon-cyan));
+    border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s; white-space: nowrap;
+  }
+  .forum-new-btn:hover { transform: scale(1.05); box-shadow: 0 4px 15px rgba(57,255,20,0.4); }
+  .forum-back-btn {
+    padding: 10px 20px; font-family: 'Bangers', cursive; font-size: 16px;
+    color: var(--neon-cyan); background: rgba(0,255,255,0.1); border: 1px solid var(--neon-cyan);
+    border-radius: 8px; cursor: pointer; transition: all 0.3s; margin-bottom: 15px;
+  }
+  .forum-back-btn:hover { background: rgba(0,255,255,0.2); }
+  .forum-scroll {
+    max-height: 600px; overflow-y: auto; padding-right: 8px;
+  }
+  .forum-scroll::-webkit-scrollbar { width: 8px; }
+  .forum-scroll::-webkit-scrollbar-track { background: #111; border-radius: 4px; }
+  .forum-scroll::-webkit-scrollbar-thumb { background: var(--neon-green); border-radius: 4px; }
+  .forum-scroll::-webkit-scrollbar-thumb:hover { background: var(--neon-cyan); }
   .forum-input {
     width: 100%; padding: 12px 15px; margin-bottom: 12px; border-radius: 8px;
     border: 2px solid #333; background: #111; color: white;
     font-family: 'Comic Neue', cursive; font-size: 15px; transition: border-color 0.3s;
   }
-  .forum-input:focus { outline: none; border-color: var(--neon-green); box-shadow: 0 0 10px rgba(57, 255, 20, 0.2); }
+  .forum-input:focus { outline: none; border-color: var(--neon-green); box-shadow: 0 0 10px rgba(57,255,20,0.2); }
   .forum-input::placeholder { color: #555; }
   textarea.forum-input { min-height: 100px; resize: vertical; }
   .forum-submit {
     padding: 12px 30px; font-family: 'Bangers', cursive; font-size: 20px; letter-spacing: 2px;
     color: #000; background: linear-gradient(135deg, var(--neon-green), var(--neon-cyan));
     border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s;
-    box-shadow: 0 4px 15px rgba(57, 255, 20, 0.3);
   }
-  .forum-submit:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(57, 255, 20, 0.5); }
+  .forum-submit:hover { transform: scale(1.05); }
   .forum-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-  .forum-posts { display: flex; flex-direction: column; gap: 15px; }
-  .forum-post {
+  .forum-form-panel {
     background: linear-gradient(145deg, #1a1a4e, #0d0d2b);
-    border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 18px; transition: border-color 0.3s;
+    border: 2px solid var(--neon-green); border-radius: 12px; padding: 20px; margin-bottom: 20px; display: none;
   }
-  .forum-post:hover { border-color: var(--neon-cyan); }
-  .forum-post-header {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.05);
+  .forum-form-panel.visible { display: block; }
+  .forum-form-panel h3 { font-family: 'Bangers', cursive; font-size: 22px; color: var(--neon-green); margin-bottom: 15px; }
+
+  /* Thread list items */
+  .thread-item {
+    background: linear-gradient(145deg, #1a1a4e, #0d0d2b);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 16px;
+    margin-bottom: 12px; cursor: pointer; transition: all 0.3s; display: flex; gap: 14px; align-items: flex-start;
   }
-  .forum-post-username { font-family: 'Bangers', cursive; font-size: 18px; color: var(--neon-pink); letter-spacing: 1px; }
-  .forum-post-date { font-size: 11px; color: #555; font-family: 'Press Start 2P', monospace; }
-  .forum-post-body { color: #ccc; line-height: 1.6; font-size: 15px; word-wrap: break-word; }
-  .forum-empty {
-    text-align: center; padding: 40px; color: #555;
-    font-family: 'Press Start 2P', monospace; font-size: 12px;
+  .thread-item:hover { border-color: var(--neon-cyan); transform: translateX(4px); }
+  .thread-votes {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 50px; flex-shrink: 0;
   }
-  .forum-loading { text-align: center; padding: 30px; color: var(--neon-green); }
+  .vote-btn {
+    background: none; border: none; cursor: pointer; font-size: 18px; padding: 2px 8px;
+    color: #555; transition: all 0.2s; border-radius: 4px;
+  }
+  .vote-btn:hover { color: var(--neon-green); background: rgba(57,255,20,0.1); }
+  .vote-btn.upvoted { color: var(--neon-green); }
+  .vote-btn.downvoted { color: var(--sketch-red); }
+  .vote-score {
+    font-family: 'Press Start 2P', monospace; font-size: 14px; color: var(--neon-green);
+    min-width: 30px; text-align: center;
+  }
+  .vote-score.negative { color: var(--sketch-red); }
+  .thread-content { flex: 1; min-width: 0; }
+  .thread-title {
+    font-family: 'Bangers', cursive; font-size: 20px; color: var(--neon-pink);
+    letter-spacing: 1px; margin-bottom: 4px; word-wrap: break-word;
+  }
+  .thread-meta {
+    font-size: 11px; color: #555; font-family: 'Press Start 2P', monospace;
+    display: flex; gap: 15px; flex-wrap: wrap;
+  }
+  .thread-preview { color: #888; font-size: 14px; margin-top: 6px; word-wrap: break-word; }
+
+  /* Thread detail view */
+  .thread-detail { display: none; }
+  .thread-detail.visible { display: block; }
+  .thread-detail-post {
+    background: linear-gradient(145deg, #1a1a4e, #0d0d2b);
+    border: 2px solid var(--neon-pink); border-radius: 12px; padding: 20px; margin-bottom: 20px;
+  }
+  .thread-detail-title {
+    font-family: 'Bangers', cursive; font-size: 28px; color: var(--neon-pink);
+    margin-bottom: 8px; word-wrap: break-word;
+  }
+  .thread-detail-body { color: #ccc; line-height: 1.7; font-size: 15px; margin: 15px 0; word-wrap: break-word; }
+  .thread-detail-meta { font-size: 11px; color: #666; font-family: 'Press Start 2P', monospace; }
+
+  /* Comments */
+  .comments-section h3 {
+    font-family: 'Bangers', cursive; font-size: 22px; color: var(--neon-cyan); margin-bottom: 15px;
+  }
+  .comment-item {
+    background: rgba(255,255,255,0.03); border-left: 3px solid var(--neon-cyan);
+    border-radius: 0 8px 8px 0; padding: 12px 15px; margin-bottom: 10px;
+  }
+  .comment-header {
+    display: flex; justify-content: space-between; margin-bottom: 6px;
+    font-size: 11px; color: #555;
+  }
+  .comment-username { font-family: 'Bangers', cursive; font-size: 15px; color: var(--neon-pink); }
+  .comment-body { color: #bbb; font-size: 14px; line-height: 1.5; word-wrap: break-word; }
+  .comment-form { margin-top: 20px; }
+  .comment-form h4 { font-family: 'Bangers', cursive; font-size: 18px; color: var(--neon-green); margin-bottom: 10px; }
+
+  .forum-empty { text-align: center; padding: 40px; color: #555; font-family: 'Press Start 2P', monospace; font-size: 12px; }
   .forum-error {
     text-align: center; padding: 15px; background: rgba(255,0,0,0.1);
     border: 1px solid var(--sketch-red); border-radius: 8px; color: var(--sketch-red);
     margin-bottom: 15px; font-size: 14px;
   }
-  .forum-post-count {
-    text-align: center; margin-bottom: 15px; font-size: 12px;
-    color: #555; font-family: 'Press Start 2P', monospace;
-  }
+  .forum-count { text-align: center; margin-bottom: 15px; font-size: 11px; color: #555; font-family: 'Press Start 2P', monospace; }
 
   @media (max-width: 600px) {
     .products { grid-template-columns: 1fr; }
     .testimonial-grid { grid-template-columns: 1fr; }
     .side-popup { display: none; }
     .tab-btn { padding: 10px 16px; font-size: 16px; }
+    .forum-toolbar { flex-direction: column; }
+    .thread-item { flex-direction: column; }
+    .thread-votes { flex-direction: row; }
   }
 </style>
 </head>
@@ -402,7 +477,7 @@
 <div class="warning-bar"><span>⚠️ ACT NOW - OFFER EXPIRES SOON ⚠️</span></div>
 
 <div class="header">
-  <h1>🏴‍☠️ YarghleDeals.biz 🏴‍☠️</h1>
+  <h1>🏴‍☠️ YarghleDeals.vip 🏴‍☠️</h1>
   <div class="subtitle">>>> THE INTERNET'S #1 TRUSTED SOURCE <<<</div>
   <div class="legit-badge">✅ 100% LEGIT - TOTALLY NOT A SCAM ✅</div>
 </div>
@@ -492,7 +567,7 @@
     </div>
   </div>
 
-  <div class="fine-print">*YarghleDeals.biz is not responsible for any expectations of actually downloading RAM, money, CPUs, or boats. This is not real. None of this is real. If you actually tried to download RAM from the internet, please close your browser and think about what you've done. Yarghle did not actually endorse this product. Any resemblance to actual scam websites is intentional because that's the whole point.</div>
+  <div class="fine-print">*YarghleDeals.vip is not responsible for any expectations of actually downloading RAM, money, CPUs, or boats. This is not real. None of this is real. If you actually tried to download RAM from the internet, please close your browser and think about what you've done. Yarghle did not actually endorse this product. Any resemblance to actual scam websites is intentional because that's the whole point.</div>
 </div>
 </div>
 
@@ -523,24 +598,50 @@
 <!-- ===== TAB 3: FORUM ===== -->
 <div class="tab-content" id="tab-forum">
 <div class="main-content">
-  <div class="forum-section">
+  <div class="forum-container">
     <h2>💬 YARGHLE'S TAVERN 💬</h2>
-    <p style="text-align: center; color: #888; margin-bottom: 25px;">
-      Welcome aboard, matey! Leave a message for Captain Yarghle and the crew.
-    </p>
 
-    <div class="forum-post-form">
-      <h3>📝 POST A MESSAGE</h3>
-      <input type="text" class="forum-input" id="forumUsername" placeholder="Your pirate name..." maxlength="30">
-      <textarea class="forum-input" id="forumMessage" placeholder="Speak yer mind, landlubber..." maxlength="500"></textarea>
-      <button class="forum-submit" id="forumSubmitBtn" onclick="submitForumPost()">🏴‍☠️ POST TO THE TAVERN</button>
+    <!-- THREAD LIST VIEW -->
+    <div id="forumListView">
+      <div class="forum-toolbar">
+        <input type="text" class="forum-search" id="forumSearch" placeholder="🔍 Search threads..." oninput="filterThreads()">
+        <button class="forum-new-btn" onclick="toggleNewThread()">✏️ NEW THREAD</button>
+      </div>
+
+      <div class="forum-form-panel" id="newThreadForm">
+        <h3>📝 START A NEW THREAD</h3>
+        <input type="text" class="forum-input" id="threadUsername" placeholder="Your pirate name..." maxlength="30">
+        <input type="text" class="forum-input" id="threadTitle" placeholder="Thread title..." maxlength="100">
+        <textarea class="forum-input" id="threadMessage" placeholder="What's on yer mind, matey?" maxlength="2000"></textarea>
+        <button class="forum-submit" id="threadSubmitBtn" onclick="submitThread()">🏴‍☠️ POST THREAD</button>
+        <div id="threadError" style="margin-top: 10px;"></div>
+      </div>
+
+      <div class="forum-count" id="forumCount"></div>
+      <div class="forum-scroll" id="forumThreadList">
+        <div class="forum-empty" id="forumLoading">Loading threads from the seven seas... ⏳</div>
+      </div>
     </div>
 
-    <div class="forum-post-count" id="forumPostCount"></div>
-    <div id="forumError"></div>
-    <div class="forum-posts" id="forumPosts">
-      <div class="forum-loading" id="forumLoading">Loading messages from the seven seas... ⏳</div>
+    <!-- THREAD DETAIL VIEW -->
+    <div class="thread-detail" id="forumDetailView">
+      <button class="forum-back-btn" onclick="showThreadList()">← BACK TO THREADS</button>
+      <div id="threadDetailContent"></div>
+
+      <div class="comments-section">
+        <h3 id="commentsHeader">💬 COMMENTS</h3>
+        <div class="forum-scroll" id="commentsList"></div>
+
+        <div class="comment-form">
+          <h4>💬 LEAVE A COMMENT</h4>
+          <input type="text" class="forum-input" id="commentUsername" placeholder="Your pirate name..." maxlength="30">
+          <textarea class="forum-input" id="commentMessage" placeholder="Add your reply..." maxlength="1000" style="min-height: 70px;"></textarea>
+          <button class="forum-submit" id="commentSubmitBtn" onclick="submitComment()" style="font-size: 16px; padding: 10px 24px;">💬 POST COMMENT</button>
+          <div id="commentError" style="margin-top: 10px;"></div>
+        </div>
+      </div>
     </div>
+
   </div>
 </div>
 </div>
@@ -590,7 +691,7 @@
     <span>🏆 "Best Website" - Internet Awards 2025*</span>
     <span>🛡️ Norton Approved*</span>
   </div>
-  <p>© 2025 YarghleDeals.biz — A Division of Yarghle Industries International LLC Corp Ltd GmbH</p>
+  <p>© 2025 YarghleDeals.vip — A Division of Yarghle Industries International LLC Corp Ltd GmbH</p>
   <p style="margin-top: 5px;">*None of these certifications are real. Like this entire website.</p>
   <p style="margin-top: 10px; color: #777;">Made with 💚 as a prank. Subscribe to <a href="https://youtube.com/@yarghle" target="_blank" style="color: var(--neon-cyan);">@Yarghle</a> on YouTube!</p>
 </div>
