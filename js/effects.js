@@ -185,12 +185,8 @@ async function fetchVisitorCount() {
     if (resp.ok) {
       const data = await resp.json();
       el.textContent = data.count;
-    } else {
-      el.textContent = '???';
-    }
-  } catch (e) {
-    el.textContent = '???';
-  }
+    } else { el.textContent = '???'; }
+  } catch (e) { el.textContent = '???'; }
 }
 fetchVisitorCount();
 setInterval(fetchVisitorCount, 30000);
@@ -241,7 +237,7 @@ function closePopup() {
   document.getElementById('loadingText').textContent = '0%';
 }
 
-// ============ FORUM (Supabase) ============
+// ============ FORUM SYSTEM ============
 
 function sanitize(str) {
   const div = document.createElement('div');
@@ -260,105 +256,292 @@ function formatDate(dateStr) {
   return d.toLocaleDateString();
 }
 
-async function loadForumPosts() {
-  const container = document.getElementById('forumPosts');
-  const loading = document.getElementById('forumLoading');
-  const countEl = document.getElementById('forumPostCount');
-  if (!container) return;
+// Vote tracking in localStorage
+function getVotes() {
+  try { return JSON.parse(localStorage.getItem('yarghle_votes') || '{}'); }
+  catch (e) { return {}; }
+}
+function saveVote(threadId, direction) {
+  const votes = getVotes();
+  votes[threadId] = direction;
+  try { localStorage.setItem('yarghle_votes', JSON.stringify(votes)); } catch(e) {}
+}
 
-  if (typeof supabaseClient === 'undefined' || !supabaseClient) {
-    if (loading) loading.innerHTML = '<span style="color: var(--sketch-red);">Forum loading... refresh if this persists.</span>';
-    return;
-  }
+// State
+let allThreads = [];
+let currentThreadId = null;
+
+// ---- LOAD THREADS ----
+async function loadThreads() {
+  const container = document.getElementById('forumThreadList');
+  const countEl = document.getElementById('forumCount');
+  if (!container || !supabaseClient) return;
 
   try {
     const { data, error } = await supabaseClient
-      .from('forum_posts')
+      .from('forum_threads')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(100);
 
     if (error) throw error;
 
-    if (loading) loading.style.display = 'none';
+    allThreads = data || [];
+    renderThreads(allThreads);
 
-    if (!data || data.length === 0) {
-      container.innerHTML = '<div class="forum-empty">No messages yet... Be the first pirate to post! 🏴‍☠️</div>';
-      if (countEl) countEl.textContent = '0 messages';
-      return;
-    }
-
-    if (countEl) countEl.textContent = data.length + ' message' + (data.length !== 1 ? 's' : '') + ' in the tavern';
-
-    container.innerHTML = data.map(post => `
-      <div class="forum-post">
-        <div class="forum-post-header">
-          <span class="forum-post-username">🏴‍☠️ ${sanitize(post.username)}</span>
-          <span class="forum-post-date">${formatDate(post.created_at)}</span>
-        </div>
-        <div class="forum-post-body">${sanitize(post.message)}</div>
-      </div>
-    `).join('');
+    if (countEl) countEl.textContent = allThreads.length + ' thread' + (allThreads.length !== 1 ? 's' : '') + ' in the tavern';
 
   } catch (e) {
-    console.error('Forum load error:', e);
-    if (loading) loading.innerHTML = '<span style="color: var(--sketch-red);">Failed to load messages. Try refreshing!</span>';
+    console.error('Load threads error:', e);
+    container.innerHTML = '<div class="forum-empty" style="color: var(--sketch-red);">Failed to load threads. Try refreshing!</div>';
   }
 }
 
-async function submitForumPost() {
-  const usernameEl = document.getElementById('forumUsername');
-  const messageEl = document.getElementById('forumMessage');
-  const submitBtn = document.getElementById('forumSubmitBtn');
-  const errorDiv = document.getElementById('forumError');
+function renderThreads(threads) {
+  const container = document.getElementById('forumThreadList');
+  if (!container) return;
+  const votes = getVotes();
 
-  if (!usernameEl || !messageEl) return;
+  if (!threads || threads.length === 0) {
+    container.innerHTML = '<div class="forum-empty">No threads yet... Be the first pirate to post! 🏴‍☠️</div>';
+    return;
+  }
 
-  const username = usernameEl.value.trim();
-  const message = messageEl.value.trim();
+  container.innerHTML = threads.map(t => {
+    const score = (t.upvotes || 0) - (t.downvotes || 0);
+    const myVote = votes[t.id] || null;
+    const preview = t.message.length > 120 ? t.message.substring(0, 120) + '...' : t.message;
+    return `
+      <div class="thread-item" onclick="openThread(${t.id})">
+        <div class="thread-votes" onclick="event.stopPropagation()">
+          <button class="vote-btn ${myVote === 'up' ? 'upvoted' : ''}" onclick="event.stopPropagation(); voteThread(${t.id}, 'up')">▲</button>
+          <span class="vote-score ${score < 0 ? 'negative' : ''}">${score}</span>
+          <button class="vote-btn ${myVote === 'down' ? 'downvoted' : ''}" onclick="event.stopPropagation(); voteThread(${t.id}, 'down')">▼</button>
+        </div>
+        <div class="thread-content">
+          <div class="thread-title">${sanitize(t.title)}</div>
+          <div class="thread-meta">
+            <span>🏴‍☠️ ${sanitize(t.username)}</span>
+            <span>${formatDate(t.created_at)}</span>
+            <span>💬 ${t.comment_count || 0}</span>
+          </div>
+          <div class="thread-preview">${sanitize(preview)}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ---- SEARCH / FILTER ----
+function filterThreads() {
+  const query = (document.getElementById('forumSearch')?.value || '').toLowerCase().trim();
+  if (!query) { renderThreads(allThreads); return; }
+  const filtered = allThreads.filter(t =>
+    t.title.toLowerCase().includes(query) ||
+    t.message.toLowerCase().includes(query) ||
+    t.username.toLowerCase().includes(query)
+  );
+  renderThreads(filtered);
+}
+
+// ---- NEW THREAD ----
+function toggleNewThread() {
+  const form = document.getElementById('newThreadForm');
+  if (form) form.classList.toggle('visible');
+}
+
+async function submitThread() {
+  const username = document.getElementById('threadUsername')?.value.trim();
+  const title = document.getElementById('threadTitle')?.value.trim();
+  const message = document.getElementById('threadMessage')?.value.trim();
+  const errorDiv = document.getElementById('threadError');
+  const btn = document.getElementById('threadSubmitBtn');
 
   if (errorDiv) errorDiv.innerHTML = '';
+  if (!username) { if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Ye need a pirate name!</div>'; return; }
+  if (!title) { if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Give yer thread a title!</div>'; return; }
+  if (!message) { if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Write something!</div>'; return; }
+  if (!supabaseClient) return;
 
-  if (!username) {
-    if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Ye need a pirate name, matey!</div>';
-    usernameEl.focus();
-    return;
-  }
-  if (!message) {
-    if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Write something before posting!</div>';
-    messageEl.focus();
-    return;
-  }
-
-  if (typeof supabaseClient === 'undefined' || !supabaseClient) {
-    if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Forum not ready — try refreshing!</div>';
-    return;
-  }
-
-  submitBtn.disabled = true;
-  submitBtn.textContent = '⏳ POSTING...';
+  btn.disabled = true;
+  btn.textContent = '⏳ POSTING...';
 
   try {
     const { error } = await supabaseClient
-      .from('forum_posts')
-      .insert([{ username: username, message: message }]);
-
+      .from('forum_threads')
+      .insert([{ username, title, message }]);
     if (error) throw error;
 
-    usernameEl.value = '';
-    messageEl.value = '';
-    await loadForumPosts();
-
+    document.getElementById('threadUsername').value = '';
+    document.getElementById('threadTitle').value = '';
+    document.getElementById('threadMessage').value = '';
+    document.getElementById('newThreadForm').classList.remove('visible');
+    await loadThreads();
   } catch (e) {
-    console.error('Forum post error:', e);
+    console.error('Submit thread error:', e);
     if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Failed to post: ' + sanitize(e.message) + '</div>';
   } finally {
-    submitBtn.disabled = false;
-    submitBtn.textContent = '🏴‍☠️ POST TO THE TAVERN';
+    btn.disabled = false;
+    btn.textContent = '🏴‍☠️ POST THREAD';
   }
 }
 
-// Load forum when page is ready
+// ---- VOTING ----
+async function voteThread(threadId, direction) {
+  if (!supabaseClient) return;
+  const votes = getVotes();
+  const current = votes[threadId];
+
+  // Find thread in our cache
+  const thread = allThreads.find(t => t.id === threadId);
+  if (!thread) return;
+
+  let upDelta = 0, downDelta = 0;
+
+  if (current === direction) {
+    // Undo vote
+    if (direction === 'up') upDelta = -1;
+    else downDelta = -1;
+    saveVote(threadId, null);
+  } else {
+    // New or changed vote
+    if (current === 'up') upDelta = -1;
+    if (current === 'down') downDelta = -1;
+    if (direction === 'up') upDelta += 1;
+    else downDelta += 1;
+    saveVote(threadId, direction);
+  }
+
+  // Optimistic UI update
+  thread.upvotes = (thread.upvotes || 0) + upDelta;
+  thread.downvotes = (thread.downvotes || 0) + downDelta;
+  renderThreads(allThreads);
+
+  // Persist to DB
+  try {
+    await supabaseClient
+      .from('forum_threads')
+      .update({ upvotes: thread.upvotes, downvotes: thread.downvotes })
+      .eq('id', threadId);
+  } catch (e) { console.error('Vote error:', e); }
+}
+
+// ---- OPEN THREAD ----
+async function openThread(threadId) {
+  currentThreadId = threadId;
+  document.getElementById('forumListView').style.display = 'none';
+  const detail = document.getElementById('forumDetailView');
+  detail.classList.add('visible');
+
+  const thread = allThreads.find(t => t.id === threadId);
+  if (!thread) return;
+
+  const votes = getVotes();
+  const myVote = votes[threadId] || null;
+  const score = (thread.upvotes || 0) - (thread.downvotes || 0);
+
+  document.getElementById('threadDetailContent').innerHTML = `
+    <div class="thread-detail-post">
+      <div class="thread-detail-title">${sanitize(thread.title)}</div>
+      <div class="thread-detail-meta">🏴‍☠️ ${sanitize(thread.username)} · ${formatDate(thread.created_at)}</div>
+      <div class="thread-detail-body">${sanitize(thread.message)}</div>
+      <div class="thread-votes" style="flex-direction: row; gap: 10px; margin-top: 10px;">
+        <button class="vote-btn ${myVote === 'up' ? 'upvoted' : ''}" onclick="voteThread(${threadId}, 'up'); openThread(${threadId});">▲</button>
+        <span class="vote-score ${score < 0 ? 'negative' : ''}">${score}</span>
+        <button class="vote-btn ${myVote === 'down' ? 'downvoted' : ''}" onclick="voteThread(${threadId}, 'down'); openThread(${threadId});">▼</button>
+      </div>
+    </div>`;
+
+  await loadComments(threadId);
+}
+
+function showThreadList() {
+  currentThreadId = null;
+  document.getElementById('forumListView').style.display = 'block';
+  document.getElementById('forumDetailView').classList.remove('visible');
+}
+
+// ---- COMMENTS ----
+async function loadComments(threadId) {
+  const container = document.getElementById('commentsList');
+  const header = document.getElementById('commentsHeader');
+  if (!container || !supabaseClient) return;
+
+  container.innerHTML = '<div style="text-align: center; color: var(--neon-green); padding: 15px;">Loading comments...</div>';
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('forum_comments')
+      .select('*')
+      .eq('thread_id', threadId)
+      .order('created_at', { ascending: true })
+      .limit(100);
+
+    if (error) throw error;
+
+    if (header) header.textContent = '💬 COMMENTS (' + (data?.length || 0) + ')';
+
+    if (!data || data.length === 0) {
+      container.innerHTML = '<div class="forum-empty" style="padding: 20px; font-size: 10px;">No comments yet. Be the first!</div>';
+      return;
+    }
+
+    container.innerHTML = data.map(c => `
+      <div class="comment-item">
+        <div class="comment-header">
+          <span class="comment-username">🏴‍☠️ ${sanitize(c.username)}</span>
+          <span>${formatDate(c.created_at)}</span>
+        </div>
+        <div class="comment-body">${sanitize(c.message)}</div>
+      </div>`).join('');
+
+  } catch (e) {
+    console.error('Load comments error:', e);
+    container.innerHTML = '<div class="forum-empty" style="color: var(--sketch-red);">Failed to load comments.</div>';
+  }
+}
+
+async function submitComment() {
+  const username = document.getElementById('commentUsername')?.value.trim();
+  const message = document.getElementById('commentMessage')?.value.trim();
+  const errorDiv = document.getElementById('commentError');
+  const btn = document.getElementById('commentSubmitBtn');
+
+  if (errorDiv) errorDiv.innerHTML = '';
+  if (!username) { if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Ye need a name!</div>'; return; }
+  if (!message) { if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Write a comment!</div>'; return; }
+  if (!supabaseClient || !currentThreadId) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ POSTING...';
+
+  try {
+    const { error } = await supabaseClient
+      .from('forum_comments')
+      .insert([{ thread_id: currentThreadId, username, message }]);
+    if (error) throw error;
+
+    // Update comment count
+    const thread = allThreads.find(t => t.id === currentThreadId);
+    if (thread) {
+      thread.comment_count = (thread.comment_count || 0) + 1;
+      await supabaseClient
+        .from('forum_threads')
+        .update({ comment_count: thread.comment_count })
+        .eq('id', currentThreadId);
+    }
+
+    document.getElementById('commentMessage').value = '';
+    await loadComments(currentThreadId);
+  } catch (e) {
+    console.error('Submit comment error:', e);
+    if (errorDiv) errorDiv.innerHTML = '<div class="forum-error">Failed to post comment.</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💬 POST COMMENT';
+  }
+}
+
+// ---- INIT ----
 document.addEventListener('DOMContentLoaded', () => {
-  loadForumPosts();
+  loadThreads();
 });
