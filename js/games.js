@@ -53,6 +53,7 @@
     all:      { label: 'ALL',      emoji: '🎮' },
     classic:  { label: 'CLASSIC',  emoji: '♟️' },
     casino:   { label: 'CASINO',   emoji: '🃏' },
+    party:    { label: 'PARTY',    emoji: '🎉' },
     creative: { label: 'CREATIVE', emoji: '🎨' },
   };
   let currentCategory = 'all';
@@ -163,6 +164,61 @@
       category: 'creative',
       maxPlayers: 6,
       initialState: () => ({ chat: [] }),
+    },
+    skribbl: {
+      name: 'Skribbl',
+      emoji: '✏️',
+      blurb: '3-8 pirates. Draw the word, others guess. First correct = most points.',
+      color: '#ff6ec7',
+      category: 'party',
+      maxPlayers: 8,
+      isParty: true,
+      initialState: () => ({
+        phase:  'lobby',                  // 'lobby' | 'choosing' | 'drawing' | 'roundend' | 'finished'
+        config: { rounds: 3, drawTime: 80, customWordsOnly: false },
+        ready:  [],
+        scores: {},                       // { name: total }
+        roundScores: {},                  // { name: pts this round } (cleared each round)
+        roundNumber: 0,
+        totalRounds: 0,                   // computed from rounds × players
+        drawOrder: [],                    // [name, name, ...] sequence of drawers
+        drawerIdx: 0,                     // index into drawOrder
+        currentDrawer: null,
+        currentWord:   null,              // ground truth word
+        wordChoices:   null,              // 3 options for drawer
+        revealedWord:  '',                // '_ _ _' representation with progressive hints
+        hintsRevealed: 0,
+        roundEndsAt:   null,              // ms timestamp
+        guessers:      [],                // names who guessed correctly this round
+        chatLog:       [],                // [{name, msg, type}] type='guess'|'correct'|'system'|'closeguess'
+        customWords:   [],                // host-supplied word pool
+      }),
+    },
+    chameleon: {
+      name: 'Chameleon',
+      emoji: '🦎',
+      blurb: '3-8 pirates. One is the Chameleon — bluff or be caught.',
+      color: '#39ff14',
+      category: 'party',
+      maxPlayers: 8,
+      isParty: true,
+      initialState: () => ({
+        phase:  'lobby',                  // 'lobby' | 'reveal' | 'speaking' | 'voting' | 'accusation' | 'guess' | 'roundend' | 'finished'
+        config: { rounds: 5 },
+        ready:  [],
+        scores: {},                       // { name: total }
+        roundNumber: 0,
+        currentTopic:   null,             // { name, words: [...16] }
+        currentWord:    null,             // secret word
+        currentChameleon: null,           // name
+        speakOrder:     [],
+        currentSpeaker: null,
+        spokenWords:    {},               // { name: word said }
+        votes:          {},               // { voterName: accusedName }
+        accused:        null,             // name with most votes
+        chameleonGuess: null,             // word the chameleon guessed if caught
+        roundResult:    null,             // 'chameleon-escaped' | 'chameleon-guessed' | 'caught'
+      }),
     },
   };
 
@@ -427,11 +483,11 @@
       myRole = 'spectator'; mySlot = null;
     }
 
-    // Auto-start when full (board games only — casino games use ready-up flow)
+    // Auto-start when full (board games only — casino + party games use ready-up flow)
     let newStatus = room.status;
     const game = GAMES[currentGameType];
     if (newStatus === 'waiting' && players.length >= room.max_players
-        && currentGameType !== 'draw' && !game.isCasino) {
+        && currentGameType !== 'draw' && !game.isCasino && !game.isParty) {
       newStatus = 'playing';
     }
 
@@ -554,6 +610,12 @@
     if (game && game.isCasino) {
       if (currentGameType === 'blackjack') return renderBlackjack(wrap);
       if (currentGameType === 'poker')     return renderPoker(wrap);
+      return;
+    }
+    // Party games also have phase-based UIs
+    if (game && game.isParty) {
+      if (currentGameType === 'chameleon') return renderChameleon(wrap);
+      if (currentGameType === 'skribbl')   return renderSkribbl(wrap);
       return;
     }
 
@@ -2296,6 +2358,1160 @@
     if (currentRoom.host_name !== me) return;
     const s = GAMES.poker.initialState();
     await pushState(s);
+  }
+
+  // =================================================================
+  // CHAMELEON 🦎
+  // =================================================================
+  // 16-word topic packs (4×4 grids). Easy to add more — just push more
+  // objects with `name` (label) and `words` (exactly 16 strings).
+  const CHAMELEON_TOPICS = [
+    { name: 'Food', words: ['Pizza','Eggs','Pasta','Sausage','Potatoes','Salad','Cheese','Ice Cream','Fish','Soup','Fruit','Chocolate','Cake','Bread','Chicken','Beef'] },
+    { name: 'Animals', words: ['Lion','Shark','Eagle','Snake','Dolphin','Tiger','Bear','Whale','Elephant','Spider','Frog','Penguin','Wolf','Octopus','Bat','Crocodile'] },
+    { name: 'Pirate Things', words: ['Treasure','Cannon','Parrot','Eyepatch','Compass','Map','Anchor','Sword','Skull','Ship','Plank','Chest','Rum','Hat','Hook','Flag'] },
+    { name: 'Movies & TV', words: ['Star Wars','Marvel','Disney','Horror','Comedy','Anime','Sitcom','Reality','Action','Romance','Western','Documentary','Cartoon','Drama','Musical','Sci-Fi'] },
+    { name: 'Sports', words: ['Football','Soccer','Basketball','Tennis','Golf','Hockey','Baseball','Boxing','Skating','Surfing','Skiing','Volleyball','Wrestling','Cycling','Bowling','Swimming'] },
+    { name: 'Vacation Spots', words: ['Beach','Mountain','City','Island','Forest','Desert','Cruise','Hotel','Camp','Cabin','Resort','Theme Park','Museum','Zoo','Spa','Casino'] },
+    { name: 'In a Kitchen', words: ['Knife','Fork','Plate','Cup','Pan','Oven','Fridge','Sink','Toaster','Microwave','Bowl','Spoon','Stove','Cutting Board','Blender','Kettle'] },
+    { name: 'Music Genres', words: ['Rock','Pop','Hip-Hop','Country','Jazz','Classical','Metal','Reggae','Electronic','Punk','Blues','Folk','R&B','Indie','K-Pop','Disco'] },
+    { name: 'Video Games', words: ['Mario','Zelda','Minecraft','Fortnite','Pokemon','Roblox','Halo','Tetris','Sonic','Pac-Man','Sims','Call of Duty','Among Us','Doom','Skyrim','Animal Crossing'] },
+    { name: 'Yarghle Lore', words: ['Yarghle','RAM','Subscriber','Grog','Treasure','YouTube','Bell','Like','Comment','Share','Pirate','Ship','Swag','Bit','Stream','Friend'] },
+  ];
+
+  function renderChameleon(wrap) {
+    const s = currentRoom.state;
+    if (!s) return;
+    switch (s.phase) {
+      case 'lobby':       renderChamLobby(wrap, s);       break;
+      case 'reveal':      renderChamReveal(wrap, s);      break;
+      case 'speaking':    renderChamSpeaking(wrap, s);    break;
+      case 'voting':      renderChamVoting(wrap, s);      break;
+      case 'accusation':  renderChamAccusation(wrap, s);  break;
+      case 'guess':       renderChamGuess(wrap, s);       break;
+      case 'roundend':    renderChamRoundEnd(wrap, s);    break;
+      case 'finished':    renderChamFinished(wrap, s);    break;
+      default:            wrap.innerHTML = '<div class="game-waiting">Loading...</div>';
+    }
+  }
+
+  function renderChamLobby(wrap, s) {
+    const me = getPlayerName();
+    const isHost = currentRoom.host_name === me;
+    const players = currentRoom.players || [];
+    const canStart = players.length >= 3 && players.every(p => s.ready.includes(p.name));
+    const iAmReady = s.ready.includes(me);
+
+    wrap.innerHTML = `
+      <div class="cm-lobby">
+        <h3 class="cm-lobby-title">🦎 CHAMELEON LOBBY 🦎</h3>
+        <div class="cm-rules">
+          <p>One pirate is the <strong>Chameleon</strong> — they don't know the secret word.</p>
+          <p>Everyone says one word about the secret word. The Chameleon must bluff.</p>
+          <p>After everyone speaks, vote on who you think is the Chameleon!</p>
+        </div>
+        <div class="cm-config">
+          <div class="cm-config-row">
+            <span class="cm-config-label">🎲 Rounds to play:</span>
+            <div class="cm-pill-row">
+              ${[3,5,7,10].map(n =>
+                `<button class="bj-pill ${s.config.rounds === n ? 'active' : ''}" data-rounds="${n}" ${isHost ? '' : 'disabled'}>${n}</button>`
+              ).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="cm-ready-list">
+          ${players.map(p => {
+            const r = s.ready.includes(p.name);
+            return `<div class="pk-ready-row ${r ? 'ready' : ''}">
+              <span>🏴‍☠️ ${esc(p.name)}${p.name === currentRoom.host_name ? ' 👑' : ''}</span>
+              <span>${r ? '✅ READY' : '⏳ NOT READY'}</span>
+            </div>`;
+          }).join('')}
+        </div>
+        ${players.length < 3 ? '<div class="cm-waiting">Need at least 3 pirates to play.</div>' : ''}
+        <div class="pk-lobby-actions">
+          <button class="pk-btn ready ${iAmReady ? 'on' : ''}" id="cm-ready-btn">
+            ${iAmReady ? '✅ READY!' : '⏳ READY UP'}
+          </button>
+          ${isHost
+            ? `<button class="pk-btn start" id="cm-start-btn" ${canStart ? '' : 'disabled'}>🦎 START</button>`
+            : ''}
+        </div>
+      </div>`;
+
+    if (isHost) {
+      wrap.querySelectorAll('[data-rounds]').forEach(b =>
+        b.addEventListener('click', () => chamSetRounds(parseInt(b.dataset.rounds, 10))));
+    }
+    $('cm-ready-btn').addEventListener('click', chamToggleReady);
+    const startBtn = $('cm-start-btn');
+    if (startBtn) startBtn.addEventListener('click', chamStart);
+  }
+
+  async function chamSetRounds(n) {
+    const me = getPlayerName();
+    if (currentRoom.host_name !== me) return;
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    s.config.rounds = n;
+    await pushState(s);
+  }
+
+  async function chamToggleReady() {
+    const me = getPlayerName();
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    if (s.ready.includes(me)) s.ready = s.ready.filter(n => n !== me);
+    else s.ready.push(me);
+    await pushState(s);
+  }
+
+  async function chamStart() {
+    const me = getPlayerName();
+    if (currentRoom.host_name !== me) return;
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    const players = currentRoom.players || [];
+    if (players.length < 3) { alert('Need at least 3 players.'); return; }
+    if (!players.every(p => s.ready.includes(p.name))) { alert('Not everyone is ready!'); return; }
+
+    s.scores = {};
+    players.forEach(p => { s.scores[p.name] = 0; });
+    s.roundNumber = 0;
+    chamStartRound(s);
+    await pushState(s, 'playing');
+  }
+
+  function chamStartRound(s) {
+    s.roundNumber++;
+    const players = currentRoom.players || [];
+
+    // Pick random topic + word
+    const topic = CHAMELEON_TOPICS[Math.floor(Math.random() * CHAMELEON_TOPICS.length)];
+    const word  = topic.words[Math.floor(Math.random() * topic.words.length)];
+    s.currentTopic = topic;
+    s.currentWord  = word;
+
+    // Pick random Chameleon
+    s.currentChameleon = players[Math.floor(Math.random() * players.length)].name;
+
+    // Random speak order
+    const shuffled = players.map(p => p.name).slice();
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    s.speakOrder = shuffled;
+    s.currentSpeaker = shuffled[0];
+    s.spokenWords = {};
+    s.votes = {};
+    s.accused = null;
+    s.chameleonGuess = null;
+    s.roundResult = null;
+
+    s.phase = 'reveal';
+  }
+
+  function renderChamReveal(wrap, s) {
+    const me = getPlayerName();
+    const amChameleon = s.currentChameleon === me;
+    const isHost = currentRoom.host_name === me;
+
+    wrap.innerHTML = `
+      <div class="cm-reveal">
+        <h3 class="cm-reveal-title">🎴 ROUND ${s.roundNumber} of ${s.config.rounds} 🎴</h3>
+        <div class="cm-topic-name">Topic: <strong>${esc(s.currentTopic.name)}</strong></div>
+        <div class="cm-grid">
+          ${s.currentTopic.words.map(w =>
+            `<div class="cm-grid-cell ${(amChameleon ? false : w === s.currentWord) ? 'secret' : ''}">${esc(w)}</div>`
+          ).join('')}
+        </div>
+        <div class="cm-role-card ${amChameleon ? 'chameleon' : 'normal'}">
+          ${amChameleon
+            ? `<div class="cm-role-title">🦎 YOU ARE THE CHAMELEON</div>
+               <div class="cm-role-desc">Bluff! Listen to others' words and try to figure out the secret word.</div>`
+            : `<div class="cm-role-title">🏴‍☠️ Secret Word: <strong>${esc(s.currentWord)}</strong></div>
+               <div class="cm-role-desc">When it's yer turn, say ONE word that hints at the secret — but not too obvious!</div>`
+          }
+        </div>
+        ${isHost
+          ? `<button class="pk-btn start" id="cm-begin-btn">🎤 BEGIN SPEAKING</button>`
+          : `<div class="cm-waiting">⏳ Waiting for host to begin...</div>`}
+      </div>`;
+    const btn = $('cm-begin-btn');
+    if (btn) btn.addEventListener('click', async () => {
+      const ns = JSON.parse(JSON.stringify(currentRoom.state));
+      ns.phase = 'speaking';
+      await pushState(ns);
+    });
+  }
+
+  function renderChamSpeaking(wrap, s) {
+    const me = getPlayerName();
+    const amChameleon = s.currentChameleon === me;
+    const myTurn = s.currentSpeaker === me;
+    const players = currentRoom.players || [];
+
+    let html = `
+      <div class="cm-speaking">
+        <h3 class="cm-section-title">🎤 SPEAKING PHASE</h3>
+        <div class="cm-topic-name">Topic: <strong>${esc(s.currentTopic.name)}</strong></div>
+        <div class="cm-grid">
+          ${s.currentTopic.words.map(w => {
+            const isSecret = !amChameleon && w === s.currentWord;
+            return `<div class="cm-grid-cell ${isSecret ? 'secret' : ''}">${esc(w)}</div>`;
+          }).join('')}
+        </div>
+        <div class="cm-spoken-list">`;
+
+    for (const name of s.speakOrder) {
+      const word = s.spokenWords[name];
+      const isCurrent = s.currentSpeaker === name;
+      const isMe = name === me;
+      html += `<div class="cm-spoken-row ${isCurrent ? 'current' : ''} ${word ? 'done' : ''} ${isMe ? 'me' : ''}">
+        <span class="cm-spoken-name">🏴‍☠️ ${esc(name)}${isMe ? ' (you)' : ''}</span>
+        ${word ? `<span class="cm-spoken-word">"${esc(word)}"</span>` : (isCurrent ? '<span class="cm-spoken-turn">SPEAKING...</span>' : '<span class="cm-spoken-pending">⏳</span>')}
+      </div>`;
+    }
+    html += '</div>';
+
+    if (myTurn) {
+      html += `
+        <div class="cm-input-row">
+          <input type="text" id="cm-word-input" placeholder="Say one word..." maxlength="30" autofocus>
+          <button class="pk-btn start" id="cm-submit-btn">📢 SAY IT</button>
+        </div>
+        <div class="cm-hint">${amChameleon ? '🦎 Bluff carefully — others have a secret word ye dunno!' : '💡 Hint at the secret without saying it directly.'}</div>`;
+    } else {
+      html += `<div class="cm-waiting">⏳ Waiting on <strong>${esc(s.currentSpeaker)}</strong>...</div>`;
+    }
+    html += '</div>';
+    wrap.innerHTML = html;
+
+    const submitBtn = $('cm-submit-btn');
+    const input = $('cm-word-input');
+    if (submitBtn) submitBtn.addEventListener('click', chamSubmitWord);
+    if (input) input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') chamSubmitWord();
+    });
+    if (input) input.focus();
+  }
+
+  async function chamSubmitWord() {
+    const me = getPlayerName();
+    const input = $('cm-word-input');
+    const word = (input?.value || '').trim().slice(0, 30);
+    if (!word) { alert('Say something!'); return; }
+
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    if (s.currentSpeaker !== me) return;
+
+    s.spokenWords[me] = word;
+    // Move to next speaker
+    const idx = s.speakOrder.indexOf(me);
+    if (idx === s.speakOrder.length - 1) {
+      // Everyone has spoken → voting phase
+      s.phase = 'voting';
+      s.currentSpeaker = null;
+    } else {
+      s.currentSpeaker = s.speakOrder[idx + 1];
+    }
+    await pushState(s);
+  }
+
+  function renderChamVoting(wrap, s) {
+    const me = getPlayerName();
+    const players = currentRoom.players || [];
+    const myVote = s.votes[me];
+    const allVoted = players.every(p => s.votes[p.name]);
+
+    let html = `
+      <div class="cm-voting">
+        <h3 class="cm-section-title">🗳️ VOTE: WHO IS THE CHAMELEON?</h3>
+        <div class="cm-spoken-recap">
+          ${s.speakOrder.map(name =>
+            `<div class="cm-spoken-row done">
+              <span class="cm-spoken-name">🏴‍☠️ ${esc(name)}</span>
+              <span class="cm-spoken-word">"${esc(s.spokenWords[name] || '?')}"</span>
+            </div>`
+          ).join('')}
+        </div>
+        <div class="cm-vote-grid">`;
+
+    for (const p of players) {
+      if (p.name === me) continue;     // can't vote for self
+      const voteCount = Object.values(s.votes).filter(v => v === p.name).length;
+      const iVotedThis = myVote === p.name;
+      html += `<button class="cm-vote-btn ${iVotedThis ? 'voted' : ''}" data-vote="${esc(p.name)}">
+        🦎 ${esc(p.name)}
+        ${voteCount > 0 ? `<span class="cm-vote-count">${voteCount}</span>` : ''}
+      </button>`;
+    }
+    html += '</div>';
+
+    html += `<div class="cm-vote-status">
+      ${myVote ? `Ye voted for <strong>${esc(myVote)}</strong>. Tap another to change.` : '☝️ Tap a name to vote.'}
+      <br><small>${Object.keys(s.votes).length} / ${players.length} voted</small>
+    </div>`;
+
+    if (allVoted && currentRoom.host_name === me) {
+      html += `<button class="pk-btn start" id="cm-tally-btn">📊 TALLY VOTES</button>`;
+    }
+    html += '</div>';
+    wrap.innerHTML = html;
+
+    wrap.querySelectorAll('[data-vote]').forEach(b =>
+      b.addEventListener('click', () => chamVote(b.dataset.vote)));
+    const tally = $('cm-tally-btn');
+    if (tally) tally.addEventListener('click', chamTallyVotes);
+  }
+
+  async function chamVote(target) {
+    const me = getPlayerName();
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    if (s.phase !== 'voting') return;
+    s.votes[me] = target;
+    await pushState(s);
+  }
+
+  async function chamTallyVotes() {
+    const me = getPlayerName();
+    if (currentRoom.host_name !== me) return;
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+
+    // Tally
+    const tally = {};
+    for (const v of Object.values(s.votes)) tally[v] = (tally[v] || 0) + 1;
+    let topName = null, topCount = -1, tied = false;
+    for (const [name, count] of Object.entries(tally)) {
+      if (count > topCount) { topName = name; topCount = count; tied = false; }
+      else if (count === topCount) { tied = true; }
+    }
+    // Per the rules: ties → host (dealer this round) gets deciding vote.
+    // Simplification: if tied, host's vote becomes the deciding vote among tied candidates.
+    if (tied) {
+      const hostVote = s.votes[currentRoom.host_name];
+      if (hostVote && tally[hostVote] === topCount) topName = hostVote;
+    }
+    s.accused = topName;
+
+    if (s.accused === s.currentChameleon) {
+      // Chameleon was caught → they get to guess the word
+      s.phase = 'guess';
+    } else {
+      // Chameleon escaped
+      s.roundResult = 'chameleon-escaped';
+      chamApplyScores(s);
+      s.phase = 'roundend';
+    }
+    await pushState(s);
+  }
+
+  function renderChamAccusation(wrap, s) {
+    // Currently unused phase — accusation logic happens directly in tally → guess/roundend.
+    // Kept for future expansion.
+    renderChamRoundEnd(wrap, s);
+  }
+
+  function renderChamGuess(wrap, s) {
+    const me = getPlayerName();
+    const amChameleon = s.currentChameleon === me;
+
+    let html = `
+      <div class="cm-guess">
+        <h3 class="cm-section-title">🦎 CHAMELEON CAUGHT!</h3>
+        <div class="cm-accused">${esc(s.accused)} was accused — and they ARE the Chameleon!</div>
+        <div class="cm-guess-prompt">The Chameleon now gets ONE chance to guess the secret word. If they nail it, they still win the round!</div>
+        <div class="cm-grid">
+          ${s.currentTopic.words.map(w =>
+            `<button class="cm-grid-cell guessable ${amChameleon ? 'clickable' : ''}" data-guess="${esc(w)}" ${amChameleon ? '' : 'disabled'}>${esc(w)}</button>`
+          ).join('')}
+        </div>
+        ${amChameleon
+          ? '<div class="cm-hint">☝️ Tap yer guess. No takebacks!</div>'
+          : `<div class="cm-waiting">⏳ Waiting on <strong>${esc(s.currentChameleon)}</strong> to guess...</div>`}
+      </div>`;
+    wrap.innerHTML = html;
+
+    if (amChameleon) {
+      wrap.querySelectorAll('[data-guess]').forEach(b =>
+        b.addEventListener('click', () => chamSubmitGuess(b.dataset.guess)));
+    }
+  }
+
+  async function chamSubmitGuess(guess) {
+    const me = getPlayerName();
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    if (s.currentChameleon !== me) return;
+    if (s.chameleonGuess) return;     // already guessed
+
+    s.chameleonGuess = guess;
+    if (guess === s.currentWord) {
+      s.roundResult = 'chameleon-guessed';
+    } else {
+      s.roundResult = 'caught';
+    }
+    chamApplyScores(s);
+    s.phase = 'roundend';
+    await pushState(s);
+  }
+
+  function chamApplyScores(s) {
+    const players = currentRoom.players || [];
+    if (s.roundResult === 'chameleon-escaped') {
+      s.scores[s.currentChameleon] = (s.scores[s.currentChameleon] || 0) + 2;
+    } else if (s.roundResult === 'chameleon-guessed') {
+      s.scores[s.currentChameleon] = (s.scores[s.currentChameleon] || 0) + 1;
+    } else if (s.roundResult === 'caught') {
+      for (const p of players) {
+        if (p.name !== s.currentChameleon) {
+          s.scores[p.name] = (s.scores[p.name] || 0) + 2;
+        }
+      }
+    }
+  }
+
+  function renderChamRoundEnd(wrap, s) {
+    const me = getPlayerName();
+    const isHost = currentRoom.host_name === me;
+    const players = currentRoom.players || [];
+    const lastRound = s.roundNumber >= s.config.rounds;
+
+    let resultHTML = '';
+    if (s.roundResult === 'chameleon-escaped') {
+      resultHTML = `<div class="cm-result-line escaped">🦎 The Chameleon ESCAPED!</div>
+        <div class="cm-result-detail"><strong>${esc(s.currentChameleon)}</strong> was the Chameleon.<br>
+        Secret word was <strong>${esc(s.currentWord)}</strong>. (+2 to Chameleon)</div>`;
+    } else if (s.roundResult === 'chameleon-guessed') {
+      resultHTML = `<div class="cm-result-line guessed">🎯 Caught — but the Chameleon guessed RIGHT!</div>
+        <div class="cm-result-detail"><strong>${esc(s.currentChameleon)}</strong> was the Chameleon and guessed <strong>${esc(s.chameleonGuess)}</strong>.<br>
+        Secret word was <strong>${esc(s.currentWord)}</strong>. (+1 to Chameleon)</div>`;
+    } else {
+      resultHTML = `<div class="cm-result-line caught">⚓ The Chameleon was CAUGHT!</div>
+        <div class="cm-result-detail"><strong>${esc(s.currentChameleon)}</strong> was the Chameleon and guessed <strong>${esc(s.chameleonGuess)}</strong> (wrong!).<br>
+        Secret word was <strong>${esc(s.currentWord)}</strong>. (+2 to everyone else)</div>`;
+    }
+
+    const sortedScores = players.slice().sort((a, b) => (s.scores[b.name] || 0) - (s.scores[a.name] || 0));
+    const scoresHTML = sortedScores.map(p =>
+      `<div class="cm-score-row"><span>🏴‍☠️ ${esc(p.name)}${p.name === s.currentChameleon ? ' 🦎' : ''}</span>
+        <span><strong>${s.scores[p.name] || 0}</strong> pts</span></div>`
+    ).join('');
+
+    wrap.innerHTML = `
+      <div class="cm-roundend">
+        <h3 class="cm-section-title">🎴 ROUND ${s.roundNumber} COMPLETE</h3>
+        ${resultHTML}
+        <div class="cm-scores-list">${scoresHTML}</div>
+        ${isHost
+          ? `<button class="pk-btn start" id="cm-next-btn">${lastRound ? '🏆 SHOW FINAL SCORES' : '➡️ NEXT ROUND'}</button>`
+          : `<div class="cm-waiting">⏳ Waiting for host...</div>`}
+      </div>`;
+
+    const next = $('cm-next-btn');
+    if (next) next.addEventListener('click', async () => {
+      const ns = JSON.parse(JSON.stringify(currentRoom.state));
+      if (lastRound) {
+        ns.phase = 'finished';
+      } else {
+        chamStartRound(ns);
+      }
+      await pushState(ns);
+    });
+  }
+
+  function renderChamFinished(wrap, s) {
+    const me = getPlayerName();
+    const isHost = currentRoom.host_name === me;
+    const players = currentRoom.players || [];
+    const sorted = players.slice().sort((a, b) => (s.scores[b.name] || 0) - (s.scores[a.name] || 0));
+    const winner = sorted[0];
+
+    wrap.innerHTML = `
+      <div class="cm-finished">
+        <h3 class="cm-finished-title">🏆 GAME OVER 🏆</h3>
+        <div class="cm-winner-name">🥇 <strong>${esc(winner.name)}</strong> wins!</div>
+        <div class="cm-final-scores">
+          ${sorted.map((p, i) => `
+            <div class="cm-final-row">
+              <span>#${i + 1} ${esc(p.name)}</span>
+              <span>${s.scores[p.name] || 0} pts</span>
+            </div>`).join('')}
+        </div>
+        ${isHost ? `<button class="pk-btn restart" id="cm-restart-btn">🔁 PLAY AGAIN</button>` : ''}
+      </div>`;
+    const btn = $('cm-restart-btn');
+    if (btn) btn.addEventListener('click', async () => {
+      await pushState(GAMES.chameleon.initialState());
+    });
+  }
+
+  // =================================================================
+  // SKRIBBL ✏️ (Pictionary-style word-guessing draw game)
+  // =================================================================
+  const SKRIBBL_WORDS = [
+    // Easy
+    'cat','dog','sun','moon','star','tree','house','car','book','fish',
+    'apple','banana','pizza','ball','clock','chair','door','phone','shoe','hat',
+    'eye','heart','flower','cloud','rain','snow','fire','water','egg','key',
+    // Medium
+    'pirate','ship','treasure','island','sword','parrot','anchor','compass','map','flag',
+    'dragon','castle','wizard','knight','crown','rainbow','butterfly','umbrella','volcano','planet',
+    'guitar','piano','drum','rocket','telescope','microscope','dinosaur','mermaid','unicorn','ghost',
+    'pumpkin','snowman','robot','alien','astronaut','cowboy','ninja','vampire','witch','zombie',
+    // Hard / fun
+    'helicopter','submarine','penguin','octopus','dolphin','elephant','giraffe','kangaroo','platypus','chameleon',
+    'sandwich','spaghetti','hamburger','cupcake','popcorn','sushi','tacos','donut','pretzel','watermelon',
+    'lightning','tornado','earthquake','volcano','meteor','galaxy','blackhole','rainbow','sunset','aurora',
+    'skateboard','bicycle','motorcycle','airplane','rollercoaster','escalator','treadmill','trampoline','seesaw','swing',
+    // Yarghle-themed
+    'yarghle','grog','swag','plank','cannon','eyepatch','peg leg','crow nest','jolly roger','doubloon',
+  ];
+
+  function renderSkribbl(wrap) {
+    const s = currentRoom.state;
+    if (!s) return;
+    switch (s.phase) {
+      case 'lobby':     renderSkribblLobby(wrap, s);    break;
+      case 'choosing':  renderSkribblChoosing(wrap, s); break;
+      case 'drawing':   renderSkribblDrawing(wrap, s);  break;
+      case 'roundend':  renderSkribblRoundEnd(wrap, s); break;
+      case 'finished':  renderSkribblFinished(wrap, s); break;
+      default:          wrap.innerHTML = '<div class="game-waiting">Loading...</div>';
+    }
+  }
+
+  function renderSkribblLobby(wrap, s) {
+    const me = getPlayerName();
+    const isHost = currentRoom.host_name === me;
+    const players = currentRoom.players || [];
+    const canStart = players.length >= 2 && players.every(p => s.ready.includes(p.name));
+    const iAmReady = s.ready.includes(me);
+
+    wrap.innerHTML = `
+      <div class="sk-lobby">
+        <h3 class="sk-lobby-title">✏️ SKRIBBL LOBBY ✏️</h3>
+        <div class="cm-rules">
+          <p>One pirate draws, others guess in the chat.</p>
+          <p>First correct guess gets the most points. Drawer scores when guessed.</p>
+          <p>Each player draws ${s.config.rounds} times.</p>
+        </div>
+        <div class="cm-config">
+          <div class="cm-config-row">
+            <span class="cm-config-label">🎲 Rounds per player:</span>
+            <div class="cm-pill-row">
+              ${[2,3,5].map(n =>
+                `<button class="bj-pill ${s.config.rounds === n ? 'active' : ''}" data-rounds="${n}" ${isHost ? '' : 'disabled'}>${n}</button>`
+              ).join('')}
+            </div>
+          </div>
+          <div class="cm-config-row">
+            <span class="cm-config-label">⏱️ Draw time (seconds):</span>
+            <div class="cm-pill-row">
+              ${[60,80,120,180].map(n =>
+                `<button class="bj-pill ${s.config.drawTime === n ? 'active' : ''}" data-drawtime="${n}" ${isHost ? '' : 'disabled'}>${n}s</button>`
+              ).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="cm-ready-list">
+          ${players.map(p => {
+            const r = s.ready.includes(p.name);
+            return `<div class="pk-ready-row ${r ? 'ready' : ''}">
+              <span>🏴‍☠️ ${esc(p.name)}${p.name === currentRoom.host_name ? ' 👑' : ''}</span>
+              <span>${r ? '✅ READY' : '⏳ NOT READY'}</span>
+            </div>`;
+          }).join('')}
+        </div>
+        ${players.length < 2 ? '<div class="cm-waiting">Need at least 2 pirates to play.</div>' : ''}
+        <div class="pk-lobby-actions">
+          <button class="pk-btn ready ${iAmReady ? 'on' : ''}" id="sk-ready-btn">
+            ${iAmReady ? '✅ READY!' : '⏳ READY UP'}
+          </button>
+          ${isHost
+            ? `<button class="pk-btn start" id="sk-start-btn" ${canStart ? '' : 'disabled'}>✏️ START</button>`
+            : ''}
+        </div>
+      </div>`;
+
+    if (isHost) {
+      wrap.querySelectorAll('[data-rounds]').forEach(b =>
+        b.addEventListener('click', () => skribblSetRounds(parseInt(b.dataset.rounds, 10))));
+      wrap.querySelectorAll('[data-drawtime]').forEach(b =>
+        b.addEventListener('click', () => skribblSetDrawTime(parseInt(b.dataset.drawtime, 10))));
+    }
+    $('sk-ready-btn').addEventListener('click', skribblToggleReady);
+    const startBtn = $('sk-start-btn');
+    if (startBtn) startBtn.addEventListener('click', skribblStart);
+  }
+
+  async function skribblSetRounds(n) {
+    const me = getPlayerName(); if (currentRoom.host_name !== me) return;
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    s.config.rounds = n; await pushState(s);
+  }
+  async function skribblSetDrawTime(n) {
+    const me = getPlayerName(); if (currentRoom.host_name !== me) return;
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    s.config.drawTime = n; await pushState(s);
+  }
+  async function skribblToggleReady() {
+    const me = getPlayerName();
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    if (s.ready.includes(me)) s.ready = s.ready.filter(n => n !== me);
+    else s.ready.push(me);
+    await pushState(s);
+  }
+
+  async function skribblStart() {
+    const me = getPlayerName(); if (currentRoom.host_name !== me) return;
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    const players = currentRoom.players || [];
+    if (players.length < 2) { alert('Need at least 2 players.'); return; }
+    if (!players.every(p => s.ready.includes(p.name))) { alert('Not everyone is ready!'); return; }
+
+    s.scores = {};
+    players.forEach(p => { s.scores[p.name] = 0; });
+
+    // Build draw order: each player draws `rounds` times, shuffled
+    const order = [];
+    for (let r = 0; r < s.config.rounds; r++) {
+      const shuffled = players.map(p => p.name).slice();
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      order.push(...shuffled);
+    }
+    s.drawOrder = order;
+    s.totalRounds = order.length;
+    s.drawerIdx = 0;
+    skribblNextDrawer(s);
+    await pushState(s, 'playing');
+  }
+
+  function skribblPickWordChoices() {
+    const pool = SKRIBBL_WORDS.slice();
+    const out = [];
+    for (let i = 0; i < 3 && pool.length > 0; i++) {
+      const idx = Math.floor(Math.random() * pool.length);
+      out.push(pool.splice(idx, 1)[0]);
+    }
+    return out;
+  }
+
+  function skribblNextDrawer(s) {
+    if (s.drawerIdx >= s.drawOrder.length) {
+      s.phase = 'finished';
+      return;
+    }
+    s.currentDrawer = s.drawOrder[s.drawerIdx];
+    s.wordChoices  = skribblPickWordChoices();
+    s.currentWord  = null;
+    s.revealedWord = '';
+    s.hintsRevealed = 0;
+    s.guessers     = [];
+    s.chatLog      = [];
+    s.roundScores  = {};
+    s.roundEndsAt  = null;
+    s.phase = 'choosing';
+  }
+
+  // ---------- Drawer picks a word ----------
+  function renderSkribblChoosing(wrap, s) {
+    const me = getPlayerName();
+    const amDrawer = s.currentDrawer === me;
+    const players = currentRoom.players || [];
+
+    let html = `
+      <div class="sk-table">
+        ${skribblHeaderHTML(s)}
+        <div class="sk-canvas-wrap" id="sk-canvas-wrap-placeholder"></div>`;
+
+    if (amDrawer) {
+      html += `
+        <div class="sk-choose">
+          <div class="sk-choose-title">📜 CHOOSE A WORD TO DRAW</div>
+          <div class="sk-choose-options">
+            ${s.wordChoices.map(w =>
+              `<button class="sk-choose-btn" data-word="${esc(w)}">${esc(w)}</button>`
+            ).join('')}
+          </div>
+        </div>`;
+    } else {
+      html += `<div class="sk-waiting-msg">⏳ <strong>${esc(s.currentDrawer)}</strong> is choosing a word...</div>`;
+    }
+
+    html += skribblScoreboardHTML(s, players);
+    html += '</div>';
+    wrap.innerHTML = html;
+
+    if (amDrawer) {
+      wrap.querySelectorAll('[data-word]').forEach(b =>
+        b.addEventListener('click', () => skribblPickWord(b.dataset.word)));
+    }
+  }
+
+  async function skribblPickWord(word) {
+    const me = getPlayerName();
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    if (s.currentDrawer !== me || s.phase !== 'choosing') return;
+
+    s.currentWord  = word;
+    s.revealedWord = word.split('').map(c => c === ' ' ? ' ' : '_').join(' ');
+    s.hintsRevealed = 0;
+    s.roundEndsAt = Date.now() + s.config.drawTime * 1000;
+    s.phase = 'drawing';
+    s.chatLog = [{ name: 'system', msg: `${me} is drawing!`, type: 'system' }];
+    await pushState(s);
+    // Subscribe to draw broadcasts for stroke sync (drawer broadcasts, others receive)
+    skribblSubscribeStrokes();
+  }
+
+  // ---------- Drawing phase ----------
+  let skTimerInterval = null;
+  let skRevealInterval = null;
+
+  function renderSkribblDrawing(wrap, s) {
+    const me = getPlayerName();
+    const amDrawer = s.currentDrawer === me;
+    const haveGuessed = s.guessers.includes(me);
+    const players = currentRoom.players || [];
+
+    const wordDisplay = amDrawer
+      ? s.currentWord
+      : (haveGuessed ? s.currentWord : s.revealedWord);
+
+    let html = `
+      <div class="sk-table">
+        ${skribblHeaderHTML(s)}
+        <div class="sk-word-row">
+          <span class="sk-word-label">${amDrawer ? '🖌️ Draw:' : (haveGuessed ? '✅ Word:' : 'Guess:')}</span>
+          <span class="sk-word">${esc(wordDisplay || '')}</span>
+          <span class="sk-word-len">(${(s.currentWord || '').length} letters)</span>
+        </div>
+        <div class="sk-timer" id="sk-timer">--</div>
+        <div class="sk-canvas-wrap"><canvas id="sk-canvas" class="draw-canvas" width="900" height="600"></canvas></div>`;
+
+    // Drawer toolbar
+    if (amDrawer) {
+      const colors = ['#000000','#ffffff','#ff0000','#ff8800','#fff700','#39ff14','#00ffff','#0088ff','#9d4edd','#ff1493','#8b4513','#888888'];
+      const sizes  = [3, 6, 12, 24];
+      html += `
+        <div class="draw-toolbar sk-toolbar">
+          <div class="draw-tools">
+            <button class="draw-tool ${myTool === 'brush' ? 'active' : ''}" data-tool="brush">🖌️</button>
+            <button class="draw-tool ${myTool === 'eraser' ? 'active' : ''}" data-tool="eraser">🧼</button>
+          </div>
+          <div class="draw-colors">
+            ${colors.map(c => `<button class="draw-color ${c === myStrokeColor ? 'active' : ''}" data-c="${c}" style="background:${c};"></button>`).join('')}
+          </div>
+          <div class="draw-sizes">
+            ${sizes.map(sz => `<button class="draw-size ${sz === myStrokeSize ? 'active' : ''}" data-s="${sz}"><span style="width:${sz}px;height:${sz}px;background:${myTool === 'eraser' ? '#888' : myStrokeColor};border-radius:50%;display:inline-block;"></span></button>`).join('')}
+          </div>
+          <button class="draw-clear" id="sk-clear-btn">🧽 CLEAR</button>
+        </div>`;
+    }
+
+    // Chat / guesses
+    html += `
+      <div class="sk-chat">
+        <div class="sk-chat-log" id="sk-chat-log">
+          ${s.chatLog.map(c => skribblChatLineHTML(c)).join('')}
+        </div>
+        ${(amDrawer || haveGuessed)
+          ? `<div class="sk-chat-disabled">${amDrawer ? '🖌️ You are drawing — chat is hidden.' : '✅ You guessed it! Wait for others.'}</div>`
+          : `<div class="sk-chat-input-row">
+              <input type="text" id="sk-chat-input" placeholder="Type yer guess..." maxlength="60" autocomplete="off">
+              <button class="pk-btn start" id="sk-chat-send">SEND</button>
+            </div>`}
+      </div>`;
+
+    html += skribblScoreboardHTML(s, players);
+    html += '</div>';
+    wrap.innerHTML = html;
+
+    // Set up canvas
+    skribblInitCanvas(s, amDrawer);
+
+    // Wire up drawer tools
+    if (amDrawer) {
+      wrap.querySelectorAll('.draw-tool').forEach(b => b.addEventListener('click', () => {
+        myTool = b.dataset.tool;
+        wrap.querySelectorAll('.draw-tool').forEach(x => x.classList.toggle('active', x.dataset.tool === myTool));
+        wrap.querySelectorAll('.draw-size span').forEach(s => s.style.background = myTool === 'eraser' ? '#888' : myStrokeColor);
+      }));
+      wrap.querySelectorAll('.draw-color').forEach(b => b.addEventListener('click', () => {
+        myStrokeColor = b.dataset.c; myTool = 'brush';
+        wrap.querySelectorAll('.draw-color').forEach(x => x.classList.toggle('active', x.dataset.c === myStrokeColor));
+        wrap.querySelectorAll('.draw-tool').forEach(x => x.classList.toggle('active', x.dataset.tool === 'brush'));
+        wrap.querySelectorAll('.draw-size span').forEach(s => s.style.background = myStrokeColor);
+      }));
+      wrap.querySelectorAll('.draw-size').forEach(b => b.addEventListener('click', () => {
+        myStrokeSize = parseInt(b.dataset.s, 10);
+        wrap.querySelectorAll('.draw-size').forEach(x => x.classList.toggle('active', parseInt(x.dataset.s, 10) === myStrokeSize));
+      }));
+      const clearBtn = $('sk-clear-btn');
+      if (clearBtn) clearBtn.addEventListener('click', skribblClearCanvas);
+    }
+
+    // Wire up chat
+    if (!amDrawer && !haveGuessed) {
+      const sendBtn = $('sk-chat-send');
+      const input = $('sk-chat-input');
+      const send = () => {
+        const txt = (input.value || '').trim();
+        if (txt) skribblSubmitGuess(txt);
+        input.value = '';
+      };
+      if (sendBtn) sendBtn.addEventListener('click', send);
+      if (input) {
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+        input.focus();
+      }
+    }
+
+    // Auto-scroll chat
+    const chatLog = $('sk-chat-log');
+    if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
+
+    // Start timer + reveal logic (host only, to avoid duplicate updates)
+    skribblStartTimers(s);
+  }
+
+  function skribblHeaderHTML(s) {
+    return `
+      <div class="sk-header">
+        <span class="sk-round">Round ${Math.floor(s.drawerIdx / (currentRoom.players?.length || 1)) + 1}/${s.config.rounds}</span>
+        <span class="sk-drawer">🖌️ ${esc(s.currentDrawer || '')}</span>
+        <span class="sk-progress">${s.drawerIdx + 1} / ${s.totalRounds}</span>
+      </div>`;
+  }
+
+  function skribblScoreboardHTML(s, players) {
+    const sorted = players.slice().sort((a, b) => (s.scores[b.name] || 0) - (s.scores[a.name] || 0));
+    return `<div class="sk-scoreboard">
+      ${sorted.map(p => {
+        const isDrawer = s.currentDrawer === p.name;
+        const hasGuessed = s.guessers.includes(p.name);
+        return `<div class="sk-score-pill ${isDrawer ? 'drawer' : ''} ${hasGuessed ? 'guessed' : ''}">
+          ${isDrawer ? '🖌️' : (hasGuessed ? '✅' : '🏴‍☠️')} ${esc(p.name)}: <strong>${s.scores[p.name] || 0}</strong>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  function skribblChatLineHTML(c) {
+    if (c.type === 'system')     return `<div class="sk-chat-line system">${esc(c.msg)}</div>`;
+    if (c.type === 'correct')    return `<div class="sk-chat-line correct">✅ <strong>${esc(c.name)}</strong> guessed the word!</div>`;
+    if (c.type === 'closeguess') return `<div class="sk-chat-line close"><strong>${esc(c.name)}</strong>: ${esc(c.msg)} <span class="sk-close-tag">CLOSE!</span></div>`;
+    return `<div class="sk-chat-line"><strong>${esc(c.name)}</strong>: ${esc(c.msg)}</div>`;
+  }
+
+  // ---------- Skribbl canvas ----------
+  let skCanvas = null, skCtx = null;
+  let skDrawing = false;
+  let skLastPt = null;
+  let skHistory = [];
+  let skDrawChannel = null;
+
+  function skribblInitCanvas(s, amDrawer) {
+    skCanvas = $('sk-canvas');
+    if (!skCanvas) return;
+    skCtx = skCanvas.getContext('2d');
+    skribblFitCanvas();
+    window.addEventListener('resize', skribblFitCanvas);
+
+    // Re-paint stroke history (kept across re-renders within same round)
+    skHistory.forEach(stroke => skribblPaintStroke(stroke, false));
+
+    if (amDrawer) {
+      skCanvas.addEventListener('pointerdown', skribblPointerDown);
+      skCanvas.addEventListener('pointermove', skribblPointerMove);
+      skCanvas.addEventListener('pointerup', skribblPointerUp);
+      skCanvas.addEventListener('pointercancel', skribblPointerUp);
+      skCanvas.addEventListener('pointerleave', skribblPointerUp);
+      skCanvas.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+      skCanvas.addEventListener('touchmove',  e => e.preventDefault(), { passive: false });
+    }
+  }
+
+  function skribblFitCanvas() {
+    if (!skCanvas) return;
+    const cssW = Math.min(900, skCanvas.parentElement.clientWidth - 8);
+    const cssH = Math.round(cssW * 0.66);
+    const dpr  = window.devicePixelRatio || 1;
+    skCanvas.style.width  = cssW + 'px';
+    skCanvas.style.height = cssH + 'px';
+    skCanvas.width  = Math.floor(cssW * dpr);
+    skCanvas.height = Math.floor(cssH * dpr);
+    skCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    skCtx.lineCap = 'round'; skCtx.lineJoin = 'round';
+    skCtx.fillStyle = '#ffffff';
+    skCtx.fillRect(0, 0, cssW, cssH);
+    skHistory.forEach(stroke => skribblPaintStroke(stroke, false));
+  }
+
+  function skribblNormPoint(e) {
+    const r = skCanvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+  }
+  function skribblPointerDown(e) {
+    skDrawing = true;
+    skCanvas.setPointerCapture && skCanvas.setPointerCapture(e.pointerId);
+    skLastPt = skribblNormPoint(e);
+  }
+  function skribblPointerMove(e) {
+    if (!skDrawing) return;
+    const pt = skribblNormPoint(e);
+    const useColor = (myTool === 'eraser') ? '#ffffff' : myStrokeColor;
+    const useSize = (myTool === 'eraser') ? myStrokeSize * 1.5 : myStrokeSize;
+    const stroke = { from: skLastPt, to: pt, c: useColor, s: useSize };
+    skribblPaintStroke(stroke, true);
+    skLastPt = pt;
+    if (skDrawChannel) skDrawChannel.send({ type: 'broadcast', event: 'sk-stroke', payload: stroke });
+  }
+  function skribblPointerUp() { skDrawing = false; skLastPt = null; }
+
+  function skribblPaintStroke(stroke, addToHistory) {
+    if (!skCtx || !skCanvas) return;
+    const r = skCanvas.getBoundingClientRect();
+    skCtx.strokeStyle = stroke.c;
+    skCtx.lineWidth   = stroke.s;
+    skCtx.beginPath();
+    skCtx.moveTo(stroke.from.x * r.width, stroke.from.y * r.height);
+    skCtx.lineTo(stroke.to.x * r.width, stroke.to.y * r.height);
+    skCtx.stroke();
+    if (addToHistory) skHistory.push(stroke);
+  }
+
+  function skribblClearCanvas() {
+    skHistory = [];
+    if (skCtx && skCanvas) {
+      const r = skCanvas.getBoundingClientRect();
+      skCtx.fillStyle = '#ffffff';
+      skCtx.fillRect(0, 0, r.width, r.height);
+    }
+    if (skDrawChannel) skDrawChannel.send({ type: 'broadcast', event: 'sk-clear', payload: {} });
+  }
+
+  function skribblSubscribeStrokes() {
+    if (skDrawChannel) { SUPA().removeChannel(skDrawChannel); skDrawChannel = null; }
+    skHistory = [];
+    skDrawChannel = SUPA()
+      .channel('sk-draw-' + currentRoomId, { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'sk-stroke' }, payload => {
+        const stroke = payload.payload;
+        if (!stroke || !stroke.from || !stroke.to) return;
+        skribblPaintStroke(stroke, true);
+      })
+      .on('broadcast', { event: 'sk-clear' }, () => {
+        skHistory = [];
+        if (skCtx && skCanvas) {
+          const r = skCanvas.getBoundingClientRect();
+          skCtx.fillStyle = '#ffffff';
+          skCtx.fillRect(0, 0, r.width, r.height);
+        }
+      })
+      .subscribe();
+  }
+
+  function skribblCleanupCanvas() {
+    if (skDrawChannel) { SUPA().removeChannel(skDrawChannel); skDrawChannel = null; }
+    skHistory = [];
+    skDrawing = false;
+    skLastPt = null;
+  }
+
+  // ---------- Timer + progressive reveal ----------
+  function skribblStartTimers(s) {
+    if (skTimerInterval) clearInterval(skTimerInterval);
+    if (skRevealInterval) clearInterval(skRevealInterval);
+    if (s.phase !== 'drawing') return;
+
+    skTimerInterval = setInterval(() => {
+      const room = currentRoom;
+      if (!room || !room.state || room.state.phase !== 'drawing') {
+        clearInterval(skTimerInterval); skTimerInterval = null;
+        return;
+      }
+      const remaining = Math.max(0, Math.ceil((room.state.roundEndsAt - Date.now()) / 1000));
+      const timerEl = $('sk-timer');
+      if (timerEl) timerEl.textContent = remaining + 's';
+      // Host triggers round-end
+      if (remaining <= 0 && currentRoom.host_name === getPlayerName()) {
+        skribblEndRound('time');
+      }
+    }, 250);
+
+    // Progressive letter reveal — host only manages this
+    if (currentRoom.host_name === getPlayerName()) {
+      skRevealInterval = setInterval(() => skribblMaybeReveal(), 1000);
+    }
+  }
+
+  async function skribblMaybeReveal() {
+    const s = currentRoom?.state;
+    if (!s || s.phase !== 'drawing' || !s.currentWord) return;
+    const total = s.config.drawTime * 1000;
+    const elapsed = total - (s.roundEndsAt - Date.now());
+    // Reveal at: 50%, 70%, 85% of round duration
+    const targets = [0.5, 0.7, 0.85];
+    const wantHints = targets.filter(t => elapsed > total * t).length;
+    if (wantHints > s.hintsRevealed) {
+      // Reveal one more letter
+      const letters = s.currentWord.split('');
+      const indices = letters.map((c, i) => c === ' ' ? -1 : i).filter(i => i >= 0);
+      const revealed = s.revealedWord.split(' ');
+      // Find still-hidden indices
+      const hidden = indices.filter(i => revealed[i] === '_');
+      if (hidden.length > 0) {
+        const pickIdx = hidden[Math.floor(Math.random() * hidden.length)];
+        revealed[pickIdx] = letters[pickIdx].toUpperCase();
+        const ns = JSON.parse(JSON.stringify(s));
+        ns.revealedWord = revealed.join(' ');
+        ns.hintsRevealed = wantHints;
+        await pushState(ns);
+      }
+    }
+  }
+
+  // ---------- Guessing ----------
+  async function skribblSubmitGuess(text) {
+    const me = getPlayerName();
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    if (s.phase !== 'drawing') return;
+    if (s.currentDrawer === me) return;
+    if (s.guessers.includes(me)) return;
+
+    const guess  = text.trim().toLowerCase();
+    const target = (s.currentWord || '').toLowerCase();
+
+    if (guess === target) {
+      // Correct!
+      s.guessers.push(me);
+      // Score: faster guessers earn more. Base = 100, scaled by remaining time.
+      const total = s.config.drawTime * 1000;
+      const remaining = Math.max(0, s.roundEndsAt - Date.now());
+      const timeBonus = Math.floor(100 * (remaining / total));
+      const orderBonus = Math.max(0, 50 - s.guessers.length * 10);   // 1st: +50, 2nd: +40, ...
+      const earned = 100 + timeBonus + orderBonus;
+      s.scores[me] = (s.scores[me] || 0) + earned;
+      s.roundScores[me] = earned;
+      // Drawer also scores when someone guesses (smaller, capped)
+      const drawerEarn = 25;
+      s.scores[s.currentDrawer] = (s.scores[s.currentDrawer] || 0) + drawerEarn;
+      s.roundScores[s.currentDrawer] = (s.roundScores[s.currentDrawer] || 0) + drawerEarn;
+      s.chatLog.push({ name: me, msg: '', type: 'correct' });
+
+      // If everyone has guessed → end round
+      const players = currentRoom.players || [];
+      const nonDrawers = players.filter(p => p.name !== s.currentDrawer);
+      if (s.guessers.length >= nonDrawers.length) {
+        await pushState(s);
+        // Host transitions to roundend
+        if (currentRoom.host_name === me) skribblEndRound('all-guessed');
+        return;
+      }
+    } else {
+      // Incorrect: check for "close" (1 character off)
+      const isClose = skribblIsClose(guess, target);
+      s.chatLog.push({ name: me, msg: text, type: isClose ? 'closeguess' : 'guess' });
+    }
+    await pushState(s);
+  }
+
+  function skribblIsClose(a, b) {
+    if (Math.abs(a.length - b.length) > 2) return false;
+    // Levenshtein distance ≤ 2
+    const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+    for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+    for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        if (a[i-1] === b[j-1]) dp[i][j] = dp[i-1][j-1];
+        else dp[i][j] = 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+      }
+    }
+    return dp[a.length][b.length] <= 2 && a.length >= 3;
+  }
+
+  async function skribblEndRound(reason) {
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    if (s.phase !== 'drawing') return;
+    s.phase = 'roundend';
+    s.endReason = reason;
+    if (skTimerInterval) { clearInterval(skTimerInterval); skTimerInterval = null; }
+    if (skRevealInterval) { clearInterval(skRevealInterval); skRevealInterval = null; }
+    skribblCleanupCanvas();
+    await pushState(s);
+  }
+
+  function renderSkribblRoundEnd(wrap, s) {
+    const me = getPlayerName();
+    const isHost = currentRoom.host_name === me;
+    const players = currentRoom.players || [];
+    skribblCleanupCanvas();
+
+    const reasonText = s.endReason === 'all-guessed' ? 'Everyone guessed it!' : "Time's up!";
+    const sorted = players.slice().sort((a, b) => (s.scores[b.name] || 0) - (s.scores[a.name] || 0));
+
+    wrap.innerHTML = `
+      <div class="sk-roundend">
+        <h3 class="sk-roundend-title">⏰ ${reasonText}</h3>
+        <div class="sk-reveal">The word was: <strong>${esc(s.currentWord || '')}</strong></div>
+        <div class="sk-roundscore">
+          ${players.map(p => {
+            const earned = s.roundScores[p.name] || 0;
+            return `<div class="sk-roundscore-row">
+              <span>🏴‍☠️ ${esc(p.name)}${p.name === s.currentDrawer ? ' 🖌️' : ''}</span>
+              <span>+${earned}</span>
+            </div>`;
+          }).join('')}
+        </div>
+        <div class="sk-totalscores">
+          <div class="sk-totalscores-title">📊 Total Scores</div>
+          ${sorted.map((p, i) => `
+            <div class="cm-final-row">
+              <span>#${i + 1} ${esc(p.name)}</span>
+              <span>${s.scores[p.name] || 0}</span>
+            </div>`).join('')}
+        </div>
+        ${isHost
+          ? `<button class="pk-btn start" id="sk-next-btn">${(s.drawerIdx + 1 >= s.totalRounds) ? '🏆 SHOW FINAL SCORES' : '➡️ NEXT TURN'}</button>`
+          : `<div class="cm-waiting">⏳ Waiting for host...</div>`}
+      </div>`;
+
+    const btn = $('sk-next-btn');
+    if (btn) btn.addEventListener('click', async () => {
+      const ns = JSON.parse(JSON.stringify(currentRoom.state));
+      ns.drawerIdx++;
+      skribblNextDrawer(ns);
+      await pushState(ns);
+    });
+  }
+
+  function renderSkribblFinished(wrap, s) {
+    const me = getPlayerName();
+    const isHost = currentRoom.host_name === me;
+    const players = currentRoom.players || [];
+    const sorted = players.slice().sort((a, b) => (s.scores[b.name] || 0) - (s.scores[a.name] || 0));
+    const winner = sorted[0];
+
+    wrap.innerHTML = `
+      <div class="cm-finished">
+        <h3 class="cm-finished-title">🏆 SKRIBBL OVER 🏆</h3>
+        <div class="cm-winner-name">🥇 <strong>${esc(winner.name)}</strong> wins with ${s.scores[winner.name] || 0} pts!</div>
+        <div class="cm-final-scores">
+          ${sorted.map((p, i) => `
+            <div class="cm-final-row">
+              <span>#${i + 1} ${esc(p.name)}</span>
+              <span>${s.scores[p.name] || 0} pts</span>
+            </div>`).join('')}
+        </div>
+        ${isHost ? `<button class="pk-btn restart" id="sk-restart-btn">🔁 PLAY AGAIN</button>` : ''}
+      </div>`;
+    const btn = $('sk-restart-btn');
+    if (btn) btn.addEventListener('click', async () => {
+      await pushState(GAMES.skribbl.initialState());
+    });
   }
 
   // =================================================================
