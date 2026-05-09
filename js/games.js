@@ -48,13 +48,24 @@
   }
   function $(id) { return document.getElementById(id); }
 
+  // ============ CATEGORY REGISTRY ============
+  const CATEGORIES = {
+    all:      { label: 'ALL',      emoji: '🎮' },
+    classic:  { label: 'CLASSIC',  emoji: '♟️' },
+    casino:   { label: 'CASINO',   emoji: '🃏' },
+    creative: { label: 'CREATIVE', emoji: '🎨' },
+  };
+  let currentCategory = 'all';
+  let searchQuery     = '';
+
   // ============ GAME REGISTRY ============
   const GAMES = {
     tictactoe: {
       name: 'Tic-Tac-Toe',
       emoji: '❌⭕',
       blurb: 'Classic 3-in-a-row. Quick games while ye wait for grog.',
-      color: '#fff700',                                  // neon yellow
+      color: '#fff700',
+      category: 'classic',
       maxPlayers: 2,
       initialState: () => ({ board: Array(9).fill(null), turn: 0, winner: null }),
     },
@@ -62,7 +73,8 @@
       name: 'Connect 4',
       emoji: '🔴🟡',
       blurb: '7×6 grid. Drop discs, get four in a row.',
-      color: '#ff1493',                                  // neon pink
+      color: '#ff1493',
+      category: 'classic',
       maxPlayers: 2,
       initialState: () => ({ board: Array(42).fill(null), turn: 0, winner: null }),
     },
@@ -70,7 +82,8 @@
       name: 'Checkers',
       emoji: '⚫🔴',
       blurb: '8×8 board. Force jumps. Crown yer pieces.',
-      color: '#39ff14',                                  // neon green
+      color: '#39ff14',
+      category: 'classic',
       maxPlayers: 2,
       initialState: () => ({ board: initCheckersBoard(), turn: 0, winner: null, mustJumpFrom: null }),
     },
@@ -78,15 +91,76 @@
       name: 'Chess',
       emoji: '♟️',
       blurb: '2 players. Capture the king. Spectators welcome.',
-      color: '#00ffff',                                  // neon cyan
+      color: '#00ffff',
+      category: 'classic',
       maxPlayers: 2,
       initialState: () => ({ fen: 'start', lastMove: null, winner: null }),
+    },
+    blackjack: {
+      name: 'Blackjack',
+      emoji: '🃏',
+      blurb: '1-6 players vs the dealer. Hit 21, beat the house.',
+      color: '#ff8800',
+      category: 'casino',
+      maxPlayers: 6,
+      isCasino:  true,                // → uses ready-up lobby flow
+      initialState: () => ({
+        phase:  'lobby',              // 'lobby' | 'betting' | 'playing' | 'dealer' | 'roundend' | 'finished'
+        config: { startingChips: 1000, elimination: false },
+        round:  0,
+        chips:  {},                   // { name: number }
+        bets:   {},                   // { name: number } current round
+        hands:  {},                   // { name: [{rank, suit}] }
+        hasStood: {},                 // { name: bool }
+        dealerHand:   [],
+        dealerHidden: true,
+        deck:    [],
+        currentTurn: null,            // name whose turn it is
+        turnOrder:   [],
+        results: {},                  // { name: { outcome, payout } } during roundend
+        ready:   [],                  // names ready in lobby phase
+        eliminated: [],               // names out (elimination mode)
+      }),
+    },
+    poker: {
+      name: "Texas Hold'em",
+      emoji: '♠️♥️',
+      blurb: '2-8 players. No-limit hold\'em poker. Bluff yer way to the chip lead.',
+      color: '#9d4edd',
+      category: 'casino',
+      maxPlayers: 8,
+      isCasino:  true,
+      initialState: () => ({
+        phase:  'lobby',              // 'lobby' | 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' | 'handend' | 'finished'
+        config: { startingChips: 1000, smallBlind: 5, bigBlind: 10, elimination: false },
+        ready:  [],
+        chips:  {},                   // { name: number }
+        eliminated: [],
+        handNumber: 0,
+        dealerName: null,
+        // Per-hand state
+        deck:        [],
+        communityCards: [],
+        pot:         0,
+        currentBet:  0,
+        minRaise:    0,
+        currentTurn: null,
+        turnOrder:   [],              // ordered names; index 0 acts first this round
+        hands:       {},              // { name: [card, card] }
+        bets:        {},              // { name: chips bet this round }
+        totalBets:   {},              // { name: chips bet this hand total }
+        inHand:      [],              // names not folded
+        hasActed:    [],              // names who acted this betting round
+        allIn:       [],              // names all-in this hand
+        lastHandResults: null,        // for handend display
+      }),
     },
     draw: {
       name: 'Drawing Room',
       emoji: '🎨',
       blurb: 'Up to 6 drawers on a shared canvas. Like PictoChat.',
       color: '#ff6ec7',
+      category: 'creative',
       maxPlayers: 6,
       initialState: () => ({ chat: [] }),
     },
@@ -114,19 +188,58 @@
       ? `<div class="games-name-line">Playing as <strong>${esc(me)}</strong> · <a href="#" id="games-change-name">change</a></div>`
       : `<div class="games-name-line">Pick a name when ye join yer first game.</div>`;
 
-    wrap.innerHTML = nameLine + '<div class="games-grid">' +
-      Object.entries(GAMES).map(([key, g]) => `
-        <button class="game-card" data-game="${key}" style="border-color:${g.color};">
-          <span class="game-emoji">${g.emoji}</span>
-          <span class="game-name" style="color:${g.color};">${esc(g.name)}</span>
-          <span class="game-blurb">${esc(g.blurb)}</span>
-          <span class="game-cta" style="background:${g.color};">ENTER LOBBY →</span>
-        </button>
-      `).join('') + '</div>';
+    // Category pills
+    const pills = Object.entries(CATEGORIES).map(([key, c]) => `
+      <button class="cat-pill ${currentCategory === key ? 'active' : ''}" data-cat="${key}">
+        ${c.emoji} ${c.label}
+      </button>`).join('');
+
+    // Filter games by category + search
+    const q = searchQuery.trim().toLowerCase();
+    const filtered = Object.entries(GAMES).filter(([key, g]) => {
+      if (currentCategory !== 'all' && g.category !== currentCategory) return false;
+      if (!q) return true;
+      return g.name.toLowerCase().includes(q) || g.blurb.toLowerCase().includes(q);
+    });
+
+    const grid = filtered.length === 0
+      ? '<div class="games-empty">No games match yer search, scallywag.</div>'
+      : '<div class="games-grid">' + filtered.map(([key, g]) => `
+          <button class="game-card" data-game="${key}" style="border-color:${g.color};">
+            <span class="game-emoji">${g.emoji}</span>
+            <span class="game-name" style="color:${g.color};">${esc(g.name)}</span>
+            <span class="game-blurb">${esc(g.blurb)}</span>
+            <span class="game-cta" style="background:${g.color};">ENTER LOBBY →</span>
+          </button>`).join('') + '</div>';
+
+    wrap.innerHTML = `
+      ${nameLine}
+      <div class="cat-pills">${pills}</div>
+      <div class="games-search-row">
+        <input type="text" id="games-search" class="games-search" placeholder="🔍 Search games..." value="${esc(searchQuery)}">
+      </div>
+      ${grid}`;
 
     wrap.querySelectorAll('.game-card').forEach(btn => {
       btn.addEventListener('click', () => enterLobby(btn.dataset.game));
     });
+    wrap.querySelectorAll('.cat-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentCategory = btn.dataset.cat;
+        renderPicker();
+      });
+    });
+    const search = $('games-search');
+    if (search) {
+      search.addEventListener('input', e => {
+        searchQuery = e.target.value;
+        // Re-render but preserve focus + cursor position
+        const pos = search.selectionStart;
+        renderPicker();
+        const newSearch = $('games-search');
+        if (newSearch) { newSearch.focus(); try { newSearch.setSelectionRange(pos, pos); } catch(e){} }
+      });
+    }
     const change = $('games-change-name');
     if (change) change.addEventListener('click', e => {
       e.preventDefault();
@@ -314,9 +427,11 @@
       myRole = 'spectator'; mySlot = null;
     }
 
-    // Auto-start when full (board games)
+    // Auto-start when full (board games only — casino games use ready-up flow)
     let newStatus = room.status;
-    if (newStatus === 'waiting' && players.length >= room.max_players && currentGameType !== 'draw') {
+    const game = GAMES[currentGameType];
+    if (newStatus === 'waiting' && players.length >= room.max_players
+        && currentGameType !== 'draw' && !game.isCasino) {
       newStatus = 'playing';
     }
 
@@ -433,6 +548,14 @@
   function renderGameContent() {
     const wrap = $('room-game');
     if (!wrap || !currentRoom) return;
+    const game = GAMES[currentGameType];
+
+    // Casino games have their own internal phase machine (lobby → betting → playing → ...)
+    if (game && game.isCasino) {
+      if (currentGameType === 'blackjack') return renderBlackjack(wrap);
+      if (currentGameType === 'poker')     return renderPoker(wrap);
+      return;
+    }
 
     if (currentRoom.status === 'waiting' && currentGameType !== 'draw') {
       wrap.innerHTML = `<div class="game-waiting">⏳ Waiting for ${currentRoom.max_players - (currentRoom.players || []).length} more pirate(s) to join...</div>`;
@@ -880,6 +1003,1302 @@
   }
 
   // =================================================================
+  // BLACKJACK
+  // - Phases: lobby → betting → playing → dealer → roundend → betting...
+  // - Hidden info: hands stored in shared state (friends-trust model)
+  // =================================================================
+  const BJ_SUITS = ['♠','♥','♦','♣'];
+  const BJ_RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  const BJ_CHIP_OPTIONS = [500, 1000, 2500, 5000];
+
+  function bjMakeDeck() {
+    const d = [];
+    for (const s of BJ_SUITS) for (const r of BJ_RANKS) d.push({ rank: r, suit: s });
+    // Fisher-Yates shuffle
+    for (let i = d.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [d[i], d[j]] = [d[j], d[i]];
+    }
+    return d;
+  }
+
+  function bjCardValue(rank) {
+    if (rank === 'A') return 11;
+    if (['J','Q','K'].includes(rank)) return 10;
+    return parseInt(rank, 10);
+  }
+
+  function bjHandTotal(hand) {
+    let total = 0, aces = 0;
+    for (const c of hand) {
+      total += bjCardValue(c.rank);
+      if (c.rank === 'A') aces++;
+    }
+    while (total > 21 && aces > 0) { total -= 10; aces--; }
+    return total;
+  }
+
+  function bjIsBlackjack(hand) {
+    return hand.length === 2 && bjHandTotal(hand) === 21;
+  }
+
+  function bjCardHTML(card, hidden) {
+    if (hidden) return '<div class="bj-card bj-back">🏴‍☠️</div>';
+    const isRed = card.suit === '♥' || card.suit === '♦';
+    return `<div class="bj-card ${isRed ? 'red' : 'black'}">
+      <span class="bj-card-rank">${card.rank}</span>
+      <span class="bj-card-suit">${card.suit}</span>
+    </div>`;
+  }
+
+  // ---- Render dispatch (phase-based) ----
+  function renderBlackjack(wrap) {
+    const s = currentRoom.state || GAMES.blackjack.initialState();
+    switch (s.phase) {
+      case 'lobby':     renderBjLobby(wrap, s); break;
+      case 'betting':   renderBjBetting(wrap, s); break;
+      case 'playing':   renderBjPlaying(wrap, s); break;
+      case 'dealer':    renderBjPlaying(wrap, s); break;   // same view, dealer revealed
+      case 'roundend':  renderBjRoundEnd(wrap, s); break;
+      case 'finished':  renderBjFinished(wrap, s); break;
+      default:          renderBjLobby(wrap, s);
+    }
+  }
+
+  function bjIsHost() {
+    return currentRoom && currentRoom.host_name === getPlayerName();
+  }
+
+  // ---------- LOBBY (config + ready up) ----------
+  function renderBjLobby(wrap, s) {
+    const me      = getPlayerName();
+    const host    = bjIsHost();
+    const players = currentRoom.players || [];
+    const config  = s.config || { startingChips: 1000, elimination: false };
+
+    const chipPills = BJ_CHIP_OPTIONS.map(amt => `
+      <button class="bj-pill ${config.startingChips === amt ? 'active' : ''}"
+              data-chips="${amt}" ${host ? '' : 'disabled'}>${amt} 💰</button>`).join('');
+
+    const elimPills = `
+      <button class="bj-pill ${!config.elimination ? 'active' : ''}" data-elim="off" ${host ? '' : 'disabled'}>OFF (auto-rebuy)</button>
+      <button class="bj-pill ${config.elimination ? 'active' : ''}" data-elim="on"  ${host ? '' : 'disabled'}>ON (broke = out)</button>`;
+
+    const readySet = new Set(s.ready || []);
+    const playerRows = players.map(p => {
+      const ready = readySet.has(p.name);
+      const isYou = p.name === me;
+      const isHost = p.name === currentRoom.host_name;
+      return `<div class="bj-player-row ${isYou ? 'me' : ''}">
+        <span>🏴‍☠️ <strong>${esc(p.name)}</strong>${isHost ? ' <span class="bj-host-tag">HOST</span>' : ''}${isYou ? ' (you)' : ''}</span>
+        <span class="bj-ready-tag ${ready ? 'ready' : 'notready'}">${ready ? '✅ READY' : '⏳ NOT READY'}</span>
+      </div>`;
+    }).join('');
+
+    const myReady   = readySet.has(me);
+    const readyCount = readySet.size;
+    const canDeal   = host && readyCount >= 1;
+
+    wrap.innerHTML = `
+      <div class="bj-lobby">
+        <h3 class="bj-lobby-h">⚙️ GAME SETTINGS</h3>
+        <div class="bj-config">
+          <div class="bj-config-row">
+            <span class="bj-config-label">Starting Chips:</span>
+            <div class="bj-pills">${chipPills}</div>
+          </div>
+          <div class="bj-config-row">
+            <span class="bj-config-label">Elimination Mode:</span>
+            <div class="bj-pills">${elimPills}</div>
+          </div>
+          ${!host ? '<div class="bj-host-note">Only the host can change settings.</div>' : ''}
+        </div>
+
+        <h3 class="bj-lobby-h">PLAYERS (${players.length}/${currentRoom.max_players})</h3>
+        <div class="bj-player-list">${playerRows || '<em style="color:#666">No players yet.</em>'}</div>
+
+        <div class="bj-lobby-actions">
+          <button class="bj-btn ready ${myReady ? 'unready' : ''}" id="bj-ready-btn">
+            ${myReady ? '❌ UNREADY' : '✅ READY UP'}
+          </button>
+          ${host ? `<button class="bj-btn deal" id="bj-deal-btn" ${canDeal ? '' : 'disabled'}>
+            🃏 DEAL CARDS (${readyCount} ready)
+          </button>` : `<div class="bj-host-note">Waiting on host to deal...</div>`}
+        </div>
+      </div>`;
+
+    // Wire up settings (host only)
+    if (host) {
+      wrap.querySelectorAll('[data-chips]').forEach(b => b.addEventListener('click', () => {
+        const next = JSON.parse(JSON.stringify(s));
+        next.config.startingChips = parseInt(b.dataset.chips, 10);
+        pushState(next);
+      }));
+      wrap.querySelectorAll('[data-elim]').forEach(b => b.addEventListener('click', () => {
+        const next = JSON.parse(JSON.stringify(s));
+        next.config.elimination = (b.dataset.elim === 'on');
+        pushState(next);
+      }));
+    }
+    // Ready toggle
+    $('bj-ready-btn').addEventListener('click', () => {
+      const next = JSON.parse(JSON.stringify(s));
+      const set = new Set(next.ready || []);
+      if (set.has(me)) set.delete(me); else set.add(me);
+      next.ready = [...set];
+      pushState(next);
+    });
+    // Deal (host only)
+    const dealBtn = $('bj-deal-btn');
+    if (dealBtn) dealBtn.addEventListener('click', () => bjStartGame(s));
+  }
+
+  function bjStartGame(s) {
+    if (!bjIsHost()) return;
+    const players = (currentRoom.players || []).filter(p => (s.ready || []).includes(p.name));
+    if (players.length === 0) return;
+
+    const next = JSON.parse(JSON.stringify(s));
+    next.phase = 'betting';
+    next.round = 1;
+    next.chips = {};
+    next.bets  = {};
+    next.eliminated = [];
+    for (const p of players) next.chips[p.name] = next.config.startingChips;
+    next.turnOrder = players.map(p => p.name);
+    next.deck = bjMakeDeck();
+    next.hands = {};
+    next.hasStood = {};
+    next.dealerHand = [];
+    next.dealerHidden = true;
+    next.currentTurn = null;
+    next.results = {};
+    pushState(next, 'playing');
+  }
+
+  // ---------- BETTING ----------
+  function renderBjBetting(wrap, s) {
+    const me = getPlayerName();
+    const myChips = s.chips[me] || 0;
+    const inGame = s.turnOrder.includes(me) && !(s.eliminated || []).includes(me);
+    const allBetsIn = s.turnOrder.every(n =>
+      (s.eliminated || []).includes(n) || (s.bets[n] !== undefined)
+    );
+
+    const pBets = s.turnOrder.map(name => {
+      const elim   = (s.eliminated || []).includes(name);
+      const chips  = s.chips[name] || 0;
+      const bet    = s.bets[name];
+      const isMe   = name === me;
+      const status = elim ? '<span class="bj-out">💀 OUT</span>'
+                   : (bet !== undefined ? `<span class="bj-bet-tag">BET ${bet}</span>`
+                                       : '<span class="bj-pending">⏳ betting...</span>');
+      return `<div class="bj-player-row ${isMe ? 'me' : ''}">
+        <span>🏴‍☠️ <strong>${esc(name)}</strong>${isMe ? ' (you)' : ''} · 💰 ${chips}</span>
+        ${status}
+      </div>`;
+    }).join('');
+
+    let bettingUI = '';
+    if (inGame && s.bets[me] === undefined && myChips > 0) {
+      const presets = [10, 25, 50, 100, 250, 500].filter(v => v <= myChips);
+      bettingUI = `
+        <div class="bj-bet-input">
+          <label>YOUR BET (max ${myChips}): </label>
+          <input type="number" id="bj-bet-amount" min="1" max="${myChips}" value="${Math.min(50, myChips)}" />
+          <div class="bj-bet-presets">
+            ${presets.map(v => `<button class="bj-pill" data-bet-preset="${v}">${v}</button>`).join('')}
+            <button class="bj-pill" data-bet-preset="${myChips}">ALL IN</button>
+          </div>
+          <button class="bj-btn primary" id="bj-place-bet-btn">💰 PLACE BET</button>
+        </div>`;
+    } else if (inGame && s.bets[me] !== undefined) {
+      bettingUI = `<div class="bj-waiting-msg">Bet placed: ${s.bets[me]}. Waiting for other players...</div>`;
+    } else if (!inGame) {
+      bettingUI = `<div class="bj-waiting-msg">👀 Spectating round ${s.round}</div>`;
+    }
+
+    wrap.innerHTML = `
+      <div class="bj-table">
+        <div class="bj-roundbar">
+          <span>ROUND ${s.round}</span>
+          <span class="bj-elim-tag">${s.config.elimination ? '☠️ ELIMINATION' : '🔄 AUTO-REBUY'}</span>
+          ${bjIsHost() ? `<button class="bj-btn end" id="bj-end-btn">END GAME</button>` : ''}
+        </div>
+        <h3 class="bj-phase-h">💵 PLACE YER BETS</h3>
+        <div class="bj-player-list">${pBets}</div>
+        ${bettingUI}
+      </div>`;
+
+    // Wire bet UI
+    const placeBtn = $('bj-place-bet-btn');
+    if (placeBtn) placeBtn.addEventListener('click', () => {
+      const amt = parseInt($('bj-bet-amount').value, 10);
+      if (!amt || amt < 1) return;
+      if (amt > myChips) return;
+      const next = JSON.parse(JSON.stringify(s));
+      next.bets[me] = amt;
+      // If everyone has now bet, auto-deal
+      const everyoneBet = next.turnOrder.every(n =>
+        (next.eliminated || []).includes(n) || next.bets[n] !== undefined);
+      if (everyoneBet) {
+        bjDealRound(next);
+        pushState(next);
+      } else {
+        pushState(next);
+      }
+    });
+    wrap.querySelectorAll('[data-bet-preset]').forEach(b => b.addEventListener('click', () => {
+      $('bj-bet-amount').value = b.dataset.betPreset;
+    }));
+    const endBtn = $('bj-end-btn');
+    if (endBtn) endBtn.addEventListener('click', () => bjEndGame(s));
+
+    // Edge case: if you're spectating and all others have bet, auto-deal
+    if (allBetsIn) {
+      const next = JSON.parse(JSON.stringify(s));
+      bjDealRound(next);
+      pushState(next);
+    }
+  }
+
+  function bjDealRound(s) {
+    // Deal 2 to each active player, 2 to dealer (1 hidden)
+    const active = s.turnOrder.filter(n => !(s.eliminated || []).includes(n) && s.bets[n] !== undefined);
+    s.hands = {};
+    s.hasStood = {};
+    for (const n of active) s.hands[n] = [];
+    s.dealerHand = [];
+    for (let i = 0; i < 2; i++) {
+      for (const n of active) s.hands[n].push(s.deck.shift());
+      s.dealerHand.push(s.deck.shift());
+    }
+    s.dealerHidden = true;
+    s.phase = 'playing';
+
+    // Auto-stand any natural blackjacks
+    for (const n of active) if (bjIsBlackjack(s.hands[n])) s.hasStood[n] = true;
+
+    // Set first turn (skip those with blackjack already standing)
+    s.currentTurn = active.find(n => !s.hasStood[n]) || null;
+
+    // If everyone has blackjack, jump straight to dealer
+    if (s.currentTurn === null) bjPlayDealer(s);
+  }
+
+  // ---------- PLAYING / DEALER ----------
+  function renderBjPlaying(wrap, s) {
+    const me = getPlayerName();
+    const dealerTotal = bjHandTotal(s.dealerHand);
+    const dealerVisibleTotal = s.dealerHidden
+      ? bjHandTotal([s.dealerHand[0]])
+      : dealerTotal;
+
+    const dealerCards = s.dealerHand.map((c, i) =>
+      bjCardHTML(c, s.dealerHidden && i === 1)).join('');
+
+    const playerBlocks = s.turnOrder
+      .filter(n => !(s.eliminated || []).includes(n) && s.hands[n])
+      .map(name => {
+        const hand = s.hands[name];
+        const total = bjHandTotal(hand);
+        const isMe = name === me;
+        const stood = s.hasStood[name];
+        const busted = total > 21;
+        const isCurrent = s.currentTurn === name;
+        const bj = bjIsBlackjack(hand);
+        const tag = busted ? '<span class="bj-out">💥 BUST</span>'
+                  : bj ? '<span class="bj-bj-tag">⭐ BLACKJACK</span>'
+                  : stood ? '<span class="bj-stood-tag">✋ STAND</span>'
+                  : isCurrent ? '<span class="bj-turn-tag">⏰ TURN</span>'
+                  : '';
+        return `
+          <div class="bj-player-block ${isMe ? 'me' : ''} ${isCurrent ? 'current' : ''}">
+            <div class="bj-player-head">
+              🏴‍☠️ <strong>${esc(name)}</strong>${isMe ? ' (you)' : ''}
+              · 💰 ${s.chips[name] || 0} · BET ${s.bets[name] || 0} ${tag}
+            </div>
+            <div class="bj-cards">${hand.map(c => bjCardHTML(c, false)).join('')}
+              <div class="bj-total">${total}</div>
+            </div>
+          </div>`;
+      }).join('');
+
+    const myTurn = s.currentTurn === me && s.phase === 'playing';
+    const myHand = s.hands[me];
+    const myBusted = myHand && bjHandTotal(myHand) > 21;
+    const actionUI = myTurn && !myBusted ? `
+      <div class="bj-actions">
+        <button class="bj-btn primary" id="bj-hit-btn">👊 HIT</button>
+        <button class="bj-btn"         id="bj-stand-btn">✋ STAND</button>
+      </div>` : '';
+
+    wrap.innerHTML = `
+      <div class="bj-table">
+        <div class="bj-roundbar">
+          <span>ROUND ${s.round}</span>
+          <span class="bj-elim-tag">${s.config.elimination ? '☠️ ELIMINATION' : '🔄 AUTO-REBUY'}</span>
+          ${bjIsHost() ? `<button class="bj-btn end" id="bj-end-btn">END GAME</button>` : ''}
+        </div>
+
+        <div class="bj-dealer">
+          <div class="bj-dealer-head">🎩 DEALER ${s.dealerHidden ? `(showing ${dealerVisibleTotal})` : `(${dealerTotal}${dealerTotal > 21 ? ' BUST' : ''})`}</div>
+          <div class="bj-cards">${dealerCards}</div>
+        </div>
+
+        <div class="bj-players">${playerBlocks}</div>
+        ${actionUI}
+      </div>`;
+
+    if (myTurn && !myBusted) {
+      $('bj-hit-btn').addEventListener('click',   () => bjAction('hit'));
+      $('bj-stand-btn').addEventListener('click', () => bjAction('stand'));
+    }
+    const endBtn = $('bj-end-btn');
+    if (endBtn) endBtn.addEventListener('click', () => bjEndGame(s));
+  }
+
+  function bjAction(kind) {
+    const me = getPlayerName();
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    if (s.currentTurn !== me || s.phase !== 'playing') return;
+
+    if (kind === 'hit') {
+      s.hands[me].push(s.deck.shift());
+      const total = bjHandTotal(s.hands[me]);
+      if (total >= 21) s.hasStood[me] = true;     // auto-stand on 21 or bust
+    } else if (kind === 'stand') {
+      s.hasStood[me] = true;
+    }
+
+    // Find next player who hasn't stood
+    const order = s.turnOrder.filter(n => !(s.eliminated || []).includes(n) && s.hands[n]);
+    const myIdx = order.indexOf(me);
+    let next = null;
+    for (let i = 1; i <= order.length; i++) {
+      const candidate = order[(myIdx + i) % order.length];
+      if (!s.hasStood[candidate]) { next = candidate; break; }
+    }
+    s.currentTurn = next;
+
+    if (next === null) bjPlayDealer(s);
+    pushState(s);
+  }
+
+  function bjPlayDealer(s) {
+    s.phase = 'dealer';
+    s.dealerHidden = false;
+    // Dealer hits until total >= 17 (stands on all 17, including soft 17)
+    while (bjHandTotal(s.dealerHand) < 17) {
+      s.dealerHand.push(s.deck.shift());
+    }
+    bjResolveResults(s);
+  }
+
+  function bjResolveResults(s) {
+    const dealerTotal = bjHandTotal(s.dealerHand);
+    const dealerBust  = dealerTotal > 21;
+    const dealerBJ    = bjIsBlackjack(s.dealerHand);
+    s.results = {};
+
+    for (const name of s.turnOrder) {
+      if ((s.eliminated || []).includes(name)) continue;
+      const hand = s.hands[name];
+      if (!hand) continue;
+      const bet = s.bets[name] || 0;
+      const total = bjHandTotal(hand);
+      const playerBJ = bjIsBlackjack(hand);
+      let outcome, payout = 0;
+
+      if (playerBJ && !dealerBJ) {
+        outcome = 'blackjack'; payout = Math.floor(bet * 2.5);     // 3:2 payout (return + 1.5x)
+      } else if (playerBJ && dealerBJ) {
+        outcome = 'push'; payout = bet;
+      } else if (total > 21) {
+        outcome = 'bust'; payout = 0;
+      } else if (dealerBust) {
+        outcome = 'win'; payout = bet * 2;
+      } else if (total > dealerTotal) {
+        outcome = 'win'; payout = bet * 2;
+      } else if (total === dealerTotal) {
+        outcome = 'push'; payout = bet;
+      } else {
+        outcome = 'lose'; payout = 0;
+      }
+
+      // Subtract bet (taken at deal time conceptually) and add payout
+      s.chips[name] = (s.chips[name] || 0) - bet + payout;
+      s.results[name] = { outcome, payout, net: payout - bet };
+    }
+
+    // Apply elimination / rebuy after results
+    const REBUY = 200;
+    for (const name of s.turnOrder) {
+      if ((s.eliminated || []).includes(name)) continue;
+      if ((s.chips[name] || 0) <= 0) {
+        if (s.config.elimination) {
+          s.eliminated = [...(s.eliminated || []), name];
+          s.chips[name] = 0;
+        } else {
+          s.chips[name] = REBUY;
+          s.results[name] = { ...(s.results[name] || {}), rebuy: REBUY };
+        }
+      }
+    }
+
+    s.phase = 'roundend';
+    s.currentTurn = null;
+  }
+
+  // ---------- ROUND END (results) ----------
+  function renderBjRoundEnd(wrap, s) {
+    const me = getPlayerName();
+    const dealerTotal = bjHandTotal(s.dealerHand);
+
+    const dealerCards = s.dealerHand.map(c => bjCardHTML(c, false)).join('');
+    const blocks = s.turnOrder
+      .filter(n => s.hands[n])
+      .map(name => {
+        const hand = s.hands[name];
+        const total = bjHandTotal(hand);
+        const r = s.results[name] || { outcome: '?' };
+        const isMe = name === me;
+        const elim = (s.eliminated || []).includes(name);
+
+        const outcomeLabel = {
+          blackjack: '⭐ BLACKJACK!',
+          win:       '🏆 WIN',
+          push:      '🤝 PUSH',
+          bust:      '💥 BUST',
+          lose:      '😢 LOSE',
+        }[r.outcome] || r.outcome;
+
+        const netLabel = r.net > 0 ? `<span class="bj-net pos">+${r.net} 💰</span>`
+                       : r.net < 0 ? `<span class="bj-net neg">${r.net} 💰</span>`
+                       : `<span class="bj-net">±0</span>`;
+
+        const rebuyTag = r.rebuy ? `<span class="bj-rebuy-tag">💸 Auto-rebuy ${r.rebuy}</span>` : '';
+        const elimTag  = elim ? `<span class="bj-out">☠️ ELIMINATED</span>` : '';
+
+        return `<div class="bj-player-block ${isMe ? 'me' : ''}">
+          <div class="bj-player-head">
+            🏴‍☠️ <strong>${esc(name)}</strong>${isMe ? ' (you)' : ''}
+            · 💰 ${s.chips[name] || 0} ${netLabel} ${elimTag} ${rebuyTag}
+          </div>
+          <div class="bj-cards">${hand.map(c => bjCardHTML(c, false)).join('')}
+            <div class="bj-total">${total}</div>
+            <span class="bj-outcome ${r.outcome}">${outcomeLabel}</span>
+          </div>
+        </div>`;
+      }).join('');
+
+    const stillIn = s.turnOrder.filter(n => !(s.eliminated || []).includes(n));
+    const canContinue = stillIn.length > 0;
+
+    wrap.innerHTML = `
+      <div class="bj-table">
+        <div class="bj-roundbar">
+          <span>ROUND ${s.round} RESULTS</span>
+          <span class="bj-elim-tag">${s.config.elimination ? '☠️ ELIMINATION' : '🔄 AUTO-REBUY'}</span>
+          ${bjIsHost() ? `<button class="bj-btn end" id="bj-end-btn">END GAME</button>` : ''}
+        </div>
+
+        <div class="bj-dealer">
+          <div class="bj-dealer-head">🎩 DEALER (${dealerTotal}${dealerTotal > 21 ? ' BUST' : ''})</div>
+          <div class="bj-cards">${dealerCards}</div>
+        </div>
+
+        <div class="bj-players">${blocks}</div>
+
+        <div class="bj-actions">
+          ${canContinue ? `<button class="bj-btn primary" id="bj-next-btn">▶️ NEXT ROUND</button>` : ''}
+        </div>
+      </div>`;
+
+    const nextBtn = $('bj-next-btn');
+    if (nextBtn) nextBtn.addEventListener('click', () => {
+      const next = JSON.parse(JSON.stringify(s));
+      next.phase = 'betting';
+      next.round = (next.round || 1) + 1;
+      next.bets = {};
+      next.hands = {};
+      next.hasStood = {};
+      next.dealerHand = [];
+      next.dealerHidden = true;
+      next.results = {};
+      // Re-shuffle deck if low
+      if ((next.deck || []).length < 20) next.deck = bjMakeDeck();
+      pushState(next);
+    });
+    const endBtn = $('bj-end-btn');
+    if (endBtn) endBtn.addEventListener('click', () => bjEndGame(s));
+  }
+
+  function bjEndGame(s) {
+    if (!bjIsHost()) return;
+    if (!confirm('End the game? This will reveal the leaderboard.')) return;
+    const next = JSON.parse(JSON.stringify(s));
+    next.phase = 'finished';
+    pushState(next, 'finished');
+  }
+
+  // ---------- FINISHED (leaderboard) ----------
+  function renderBjFinished(wrap, s) {
+    const board = (s.turnOrder || [])
+      .map(name => ({ name, chips: s.chips[name] || 0, eliminated: (s.eliminated || []).includes(name) }))
+      .sort((a, b) => b.chips - a.chips);
+
+    const rows = board.map((p, i) => {
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`;
+      return `<div class="bj-player-row ${i === 0 ? 'winner' : ''}">
+        <span>${medal} 🏴‍☠️ <strong>${esc(p.name)}</strong>${p.eliminated ? ' ☠️' : ''}</span>
+        <span><strong>${p.chips}</strong> 💰</span>
+      </div>`;
+    }).join('');
+
+    wrap.innerHTML = `
+      <div class="bj-table">
+        <h3 class="bj-phase-h">🏆 GAME OVER 🏆</h3>
+        <div class="bj-player-list">${rows}</div>
+        ${bjIsHost() ? `<div class="bj-actions"><button class="bj-btn primary" id="bj-rematch-btn">🔁 NEW GAME</button></div>` : ''}
+      </div>`;
+
+    const rm = $('bj-rematch-btn');
+    if (rm) rm.addEventListener('click', () => {
+      const fresh = GAMES.blackjack.initialState();
+      pushState(fresh, 'waiting');
+    });
+  }
+
+  // =================================================================
+  // TEXAS HOLD'EM POKER
+  // =================================================================
+  // Note on hidden information: hole cards are stored in the room state
+  // for simplicity. The UI only shows YOUR cards face-up; others stay
+  // face-down until showdown. A determined cheater could read other hands
+  // via DevTools — that's an acceptable tradeoff for a friends-only site.
+
+  // -------- Card / deck helpers (poker uses 'Tdhscd' format for pokersolver) --------
+  const POKER_RANKS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+  const POKER_SUITS = ['c','d','h','s'];
+  function pokerNewDeck() {
+    const d = [];
+    for (const r of POKER_RANKS) for (const s of POKER_SUITS) d.push(r + s);
+    return d;
+  }
+  function pokerShuffle(deck) {
+    const d = deck.slice();
+    for (let i = d.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [d[i], d[j]] = [d[j], d[i]];
+    }
+    return d;
+  }
+  function pokerCardEmoji(suit) { return suit === 'h' ? '♥️' : suit === 'd' ? '♦️' : suit === 's' ? '♠️' : '♣️'; }
+  function pokerRankLabel(r) { return r === 'T' ? '10' : r; }
+  function pokerCardHTML(card, faceDown = false) {
+    if (faceDown || !card) {
+      return `<div class="pk-card facedown">🏴‍☠️</div>`;
+    }
+    const rank = card[0], suit = card[1];
+    const isRed = (suit === 'h' || suit === 'd');
+    return `<div class="pk-card ${isRed ? 'red' : 'black'}">
+      <span class="pk-rank">${pokerRankLabel(rank)}</span>
+      <span class="pk-suit">${pokerCardEmoji(suit)}</span>
+    </div>`;
+  }
+
+  // ---------- Top-level dispatcher ----------
+  function renderPoker(wrap) {
+    const s = currentRoom.state;
+    if (!s) { wrap.innerHTML = '<div class="game-waiting">Loading...</div>'; return; }
+    switch (s.phase) {
+      case 'lobby':    renderPokerLobby(wrap, s);    break;
+      case 'preflop':
+      case 'flop':
+      case 'turn':
+      case 'river':    renderPokerHand(wrap, s);     break;
+      case 'showdown': renderPokerHand(wrap, s);     break;
+      case 'handend':  renderPokerHandEnd(wrap, s);  break;
+      case 'finished': renderPokerFinished(wrap, s); break;
+      default:         wrap.innerHTML = '<div class="game-waiting">Unknown phase: ' + esc(s.phase) + '</div>';
+    }
+  }
+
+  // ---------- Lobby (ready-up) ----------
+  function renderPokerLobby(wrap, s) {
+    const me  = getPlayerName();
+    const isHost = currentRoom.host_name === me;
+    const players = currentRoom.players || [];
+    const allReady = players.length >= 2 && players.every(p => s.ready.includes(p.name));
+    const iAmReady = s.ready.includes(me);
+
+    wrap.innerHTML = `
+      <div class="pk-lobby">
+        <h3 class="pk-lobby-title">♠️♥️ POKER LOBBY ♣️♦️</h3>
+        <div class="pk-config">
+          <div class="pk-config-row">
+            <label>💰 Starting Chips:</label>
+            <input type="number" id="pk-start-chips" min="100" max="100000" step="50"
+                   value="${s.config.startingChips}" ${isHost ? '' : 'disabled'}>
+          </div>
+          <div class="pk-config-row">
+            <label>🪙 Small Blind:</label>
+            <input type="number" id="pk-sb" min="1" max="10000" step="1"
+                   value="${s.config.smallBlind}" ${isHost ? '' : 'disabled'}>
+          </div>
+          <div class="pk-config-row">
+            <label>💵 Big Blind:</label>
+            <input type="number" id="pk-bb" min="2" max="20000" step="1"
+                   value="${s.config.bigBlind}" ${isHost ? '' : 'disabled'}>
+          </div>
+          <div class="pk-config-row">
+            <label>☠️ Elimination Mode:</label>
+            <input type="checkbox" id="pk-elim" ${s.config.elimination ? 'checked' : ''} ${isHost ? '' : 'disabled'}>
+            <span class="pk-config-hint">${s.config.elimination ? 'Last pirate standing wins' : 'Broke players auto-rebuy'}</span>
+          </div>
+          ${isHost ? '' : '<div class="pk-config-hint">⚓ Only the host can change settings.</div>'}
+        </div>
+        <div class="pk-ready-list">
+          ${players.map(p => {
+            const r = s.ready.includes(p.name);
+            return `<div class="pk-ready-row ${r ? 'ready' : ''}">
+              <span>🏴‍☠️ ${esc(p.name)}${p.name === currentRoom.host_name ? ' 👑' : ''}</span>
+              <span>${r ? '✅ READY' : '⏳ NOT READY'}</span>
+            </div>`;
+          }).join('')}
+        </div>
+        <div class="pk-lobby-actions">
+          <button class="pk-btn ready ${iAmReady ? 'on' : ''}" id="pk-ready-btn">
+            ${iAmReady ? '✅ READY!' : '⏳ READY UP'}
+          </button>
+          ${isHost && allReady
+            ? `<button class="pk-btn start" id="pk-start-btn">🏴‍☠️ DEAL FIRST HAND</button>`
+            : (isHost ? `<button class="pk-btn start" disabled>Need 2+ ready pirates</button>` : '')}
+        </div>
+      </div>`;
+
+    // Wire up host config inputs
+    if (isHost) {
+      ['pk-start-chips', 'pk-sb', 'pk-bb', 'pk-elim'].forEach(id => {
+        const el = $(id);
+        if (el) el.addEventListener('change', pokerUpdateConfig);
+      });
+    }
+    $('pk-ready-btn').addEventListener('click', pokerToggleReady);
+    const startBtn = $('pk-start-btn');
+    if (startBtn) startBtn.addEventListener('click', pokerStartGame);
+  }
+
+  async function pokerUpdateConfig() {
+    const me = getPlayerName();
+    if (currentRoom.host_name !== me) return;
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    s.config.startingChips = Math.max(100, parseInt($('pk-start-chips').value, 10) || 1000);
+    s.config.smallBlind    = Math.max(1,  parseInt($('pk-sb').value, 10)         || 5);
+    s.config.bigBlind      = Math.max(s.config.smallBlind * 2, parseInt($('pk-bb').value, 10) || 10);
+    s.config.elimination   = $('pk-elim').checked;
+    await pushState(s);
+  }
+
+  async function pokerToggleReady() {
+    const me = getPlayerName();
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    if (s.ready.includes(me)) s.ready = s.ready.filter(n => n !== me);
+    else s.ready.push(me);
+    await pushState(s);
+  }
+
+  async function pokerStartGame() {
+    const me = getPlayerName();
+    if (currentRoom.host_name !== me) return;
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    const players = currentRoom.players || [];
+    if (players.length < 2) { alert('Need at least 2 players.'); return; }
+    if (!players.every(p => s.ready.includes(p.name))) { alert('Not everyone is ready!'); return; }
+
+    // Distribute starting chips
+    s.chips = {};
+    players.forEach(p => { s.chips[p.name] = s.config.startingChips; });
+    s.eliminated = [];
+    s.handNumber = 0;
+    // Random first dealer
+    s.dealerName = players[Math.floor(Math.random() * players.length)].name;
+    pokerStartHand(s);
+    await pushState(s, 'playing');
+  }
+
+  // ---------- Start a new hand ----------
+  function pokerStartHand(s) {
+    s.handNumber++;
+    // Active players (not eliminated, have chips)
+    const players = currentRoom.players || [];
+    const active = players.filter(p =>
+      !s.eliminated.includes(p.name) && (s.chips[p.name] || 0) > 0
+    );
+
+    if (active.length < 2) {
+      // Game over
+      s.phase = 'finished';
+      s.lastHandResults = null;
+      return;
+    }
+
+    // Rotate dealer button to next active player (clockwise = next in players[] order)
+    if (s.handNumber === 1) {
+      // First hand: dealerName already set; ensure they're active
+      if (!active.find(p => p.name === s.dealerName)) s.dealerName = active[0].name;
+    } else {
+      const dealerIdx = players.findIndex(p => p.name === s.dealerName);
+      for (let i = 1; i <= players.length; i++) {
+        const cand = players[(dealerIdx + i) % players.length];
+        if (active.find(p => p.name === cand.name)) { s.dealerName = cand.name; break; }
+      }
+    }
+
+    // Build turn order: starts left of dealer (small blind), through everyone, ending at dealer
+    const dealerIdx = players.findIndex(p => p.name === s.dealerName);
+    const order = [];
+    for (let i = 1; i <= players.length; i++) {
+      const cand = players[(dealerIdx + i) % players.length];
+      if (active.find(p => p.name === cand.name)) order.push(cand.name);
+    }
+    s.turnOrder = order;
+
+    // Reset per-hand state
+    s.deck           = pokerShuffle(pokerNewDeck());
+    s.communityCards = [];
+    s.pot            = 0;
+    s.currentBet     = 0;
+    s.minRaise       = s.config.bigBlind;
+    s.hands          = {};
+    s.bets           = {};
+    s.totalBets      = {};
+    s.inHand         = order.slice();
+    s.hasActed       = [];
+    s.allIn          = [];
+
+    // Deal 2 hole cards each
+    for (const name of order) {
+      s.hands[name] = [s.deck.pop(), s.deck.pop()];
+      s.bets[name] = 0;
+      s.totalBets[name] = 0;
+    }
+
+    // Post blinds. Heads-up special case: dealer posts small blind.
+    let sbName, bbName;
+    if (order.length === 2) {
+      sbName = order[1];     // dealer
+      bbName = order[0];     // other
+    } else {
+      sbName = order[0];     // first after dealer
+      bbName = order[1];
+    }
+    pokerCommitChips(s, sbName, Math.min(s.config.smallBlind, s.chips[sbName]));
+    pokerCommitChips(s, bbName, Math.min(s.config.bigBlind,   s.chips[bbName]));
+    s.currentBet = s.config.bigBlind;
+
+    // First to act: heads-up = dealer (sb); 3+ players = next after BB
+    if (order.length === 2) {
+      s.currentTurn = sbName;          // dealer/SB acts first preflop heads-up
+    } else {
+      const bbIdx = order.indexOf(bbName);
+      // First non-all-in active player after BB
+      for (let i = 1; i <= order.length; i++) {
+        const cand = order[(bbIdx + i) % order.length];
+        if (s.inHand.includes(cand) && !s.allIn.includes(cand)) { s.currentTurn = cand; break; }
+      }
+    }
+
+    s.phase = 'preflop';
+  }
+
+  function pokerCommitChips(s, name, amount) {
+    const have = s.chips[name] || 0;
+    const actual = Math.min(have, amount);
+    s.chips[name] -= actual;
+    s.bets[name]      = (s.bets[name] || 0) + actual;
+    s.totalBets[name] = (s.totalBets[name] || 0) + actual;
+    s.pot            += actual;
+    if (s.chips[name] === 0 && !s.allIn.includes(name)) s.allIn.push(name);
+    return actual;
+  }
+
+  // ---------- Active hand UI ----------
+  function renderPokerHand(wrap, s) {
+    const me = getPlayerName();
+    const players = currentRoom.players || [];
+    const myTurn = s.currentTurn === me && myRole === 'player' && !s.allIn.includes(me);
+    const inShowdown = s.phase === 'showdown';
+
+    // Header: pot + community cards
+    const community = [];
+    for (let i = 0; i < 5; i++) {
+      community.push(s.communityCards[i]
+        ? pokerCardHTML(s.communityCards[i])
+        : '<div class="pk-card empty"></div>');
+    }
+
+    const phaseLabel = {
+      preflop: 'PRE-FLOP', flop: 'FLOP', turn: 'TURN', river: 'RIVER', showdown: 'SHOWDOWN',
+    }[s.phase] || s.phase.toUpperCase();
+
+    let html = `
+      <div class="pk-table">
+        <div class="pk-table-head">
+          <span class="pk-phase">${phaseLabel} · Hand #${s.handNumber}</span>
+          <span class="pk-pot">💰 POT: ${s.pot}</span>
+        </div>
+        <div class="pk-community">${community.join('')}</div>
+        <div class="pk-players">`;
+
+    // Other players
+    for (const p of players) {
+      const name = p.name;
+      const isMe = name === me;
+      const folded = !s.inHand.includes(name);
+      const allIn = s.allIn.includes(name);
+      const isTurn = s.currentTurn === name;
+      const isDealer = s.dealerName === name;
+      const chips = s.chips[name] || 0;
+      const bet = s.bets[name] || 0;
+      const elim = s.eliminated.includes(name);
+      const hand = s.hands[name];
+      let cardsHTML;
+      if (!hand) cardsHTML = '<div class="pk-cards"></div>';
+      else if (isMe || (inShowdown && !folded)) {
+        cardsHTML = `<div class="pk-cards">${hand.map(c => pokerCardHTML(c)).join('')}</div>`;
+      } else if (folded) {
+        cardsHTML = `<div class="pk-cards faded">${hand.map(() => pokerCardHTML(null, true)).join('')}</div>`;
+      } else {
+        cardsHTML = `<div class="pk-cards">${hand.map(() => pokerCardHTML(null, true)).join('')}</div>`;
+      }
+
+      let status = '';
+      if (elim)    status = '<span class="pk-tag elim">OUT</span>';
+      else if (folded) status = '<span class="pk-tag fold">FOLDED</span>';
+      else if (allIn)  status = '<span class="pk-tag allin">ALL-IN</span>';
+      else if (isTurn) status = '<span class="pk-tag turn">TO ACT</span>';
+
+      html += `
+        <div class="pk-player ${isMe ? 'me' : ''} ${isTurn ? 'active' : ''} ${folded ? 'folded' : ''}">
+          <div class="pk-player-head">
+            <span class="pk-player-name">${isDealer ? '🎯 ' : ''}${esc(name)}${isMe ? ' (you)' : ''}</span>
+            ${status}
+          </div>
+          ${cardsHTML}
+          <div class="pk-player-foot">
+            <span class="pk-chips">💰 ${chips}</span>
+            ${bet > 0 ? `<span class="pk-bet">Bet: ${bet}</span>` : ''}
+          </div>
+        </div>`;
+    }
+    html += '</div>';
+
+    // Action bar (only on my turn)
+    if (myTurn && !inShowdown) {
+      const myChips = s.chips[me] || 0;
+      const myBet = s.bets[me] || 0;
+      const toCall = Math.max(0, s.currentBet - myBet);
+      const canCheck = toCall === 0;
+      const minRaiseTotal = s.currentBet + s.minRaise;     // total bet, not raise increment
+      const maxBet = myBet + myChips;                      // total commitment if all-in
+      // Default raise amount: min raise, capped at max
+      const defaultRaise = Math.min(minRaiseTotal, maxBet);
+
+      html += `
+        <div class="pk-actions">
+          <button class="pk-btn fold" id="pk-fold">FOLD</button>
+          ${canCheck
+            ? `<button class="pk-btn check" id="pk-check">CHECK</button>`
+            : `<button class="pk-btn call" id="pk-call">CALL ${Math.min(toCall, myChips)}${toCall >= myChips ? ' (ALL-IN)' : ''}</button>`}
+          ${maxBet > s.currentBet
+            ? `<div class="pk-raise-group">
+                 <input type="number" id="pk-raise-amt" min="${minRaiseTotal}" max="${maxBet}" step="1" value="${defaultRaise}">
+                 <button class="pk-btn raise" id="pk-raise">${s.currentBet === 0 ? 'BET' : 'RAISE'}</button>
+                 <button class="pk-btn allin" id="pk-allin">ALL-IN (${myChips})</button>
+               </div>`
+            : ''}
+        </div>`;
+    } else if (inShowdown) {
+      // Showdown banner - results will populate after a tick via lastHandResults; this transient view shows reveal
+      html += `<div class="pk-actions"><div class="pk-action-msg">🎴 Showdown! Revealing hands...</div></div>`;
+    } else {
+      html += `<div class="pk-actions"><div class="pk-action-msg">⏳ Waiting on ${esc(s.currentTurn || '...')}</div></div>`;
+    }
+
+    html += '</div>';
+    wrap.innerHTML = html;
+
+    // Wire up actions
+    const foldBtn = $('pk-fold');   if (foldBtn)  foldBtn.addEventListener('click', () => pokerAction('fold'));
+    const checkBtn = $('pk-check'); if (checkBtn) checkBtn.addEventListener('click', () => pokerAction('check'));
+    const callBtn = $('pk-call');   if (callBtn)  callBtn.addEventListener('click', () => pokerAction('call'));
+    const raiseBtn = $('pk-raise'); if (raiseBtn) raiseBtn.addEventListener('click', () => {
+      const amt = parseInt($('pk-raise-amt').value, 10);
+      pokerAction('raise', amt);
+    });
+    const allInBtn = $('pk-allin'); if (allInBtn) allInBtn.addEventListener('click', () => pokerAction('allin'));
+  }
+
+  // ---------- Player actions ----------
+  async function pokerAction(action, amount) {
+    const me = getPlayerName();
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    if (s.currentTurn !== me) return;
+    if (!s.inHand.includes(me)) return;
+
+    const myBet  = s.bets[me] || 0;
+    const myChips = s.chips[me] || 0;
+    const toCall = Math.max(0, s.currentBet - myBet);
+
+    if (action === 'fold') {
+      s.inHand = s.inHand.filter(n => n !== me);
+    } else if (action === 'check') {
+      if (toCall > 0) return;     // illegal
+    } else if (action === 'call') {
+      pokerCommitChips(s, me, toCall);
+    } else if (action === 'allin') {
+      pokerCommitChips(s, me, myChips);
+      // If all-in raises, update currentBet/minRaise
+      const newBet = s.bets[me];
+      if (newBet > s.currentBet) {
+        s.minRaise = Math.max(s.minRaise, newBet - s.currentBet);
+        s.currentBet = newBet;
+        // All-in raise re-opens action: clear hasActed for everyone except me
+        s.hasActed = [me];
+      }
+    } else if (action === 'raise') {
+      // 'amount' is total bet for the round, not raise increment
+      const total = parseInt(amount, 10) || 0;
+      if (total < s.currentBet + s.minRaise) {
+        // Allow shoving as a "raise" if user typed all-in amount even if below min raise
+        if (total >= myBet + myChips) {
+          // Treat as all-in
+          pokerCommitChips(s, me, myChips);
+          if (s.bets[me] > s.currentBet) {
+            s.minRaise = Math.max(s.minRaise, s.bets[me] - s.currentBet);
+            s.currentBet = s.bets[me];
+            s.hasActed = [me];
+          }
+        } else { return; }
+      } else {
+        const need = total - myBet;
+        if (need > myChips) return;
+        pokerCommitChips(s, me, need);
+        s.minRaise   = s.bets[me] - s.currentBet;
+        s.currentBet = s.bets[me];
+        s.hasActed   = [me];     // raise re-opens action
+      }
+    } else { return; }
+
+    // Mark me as having acted this round
+    if (!s.hasActed.includes(me)) s.hasActed.push(me);
+
+    // Resolve next state
+    pokerAdvance(s);
+    await pushState(s);
+
+    // If we entered showdown or handend, schedule auto-progression
+    if (s.phase === 'showdown') {
+      setTimeout(() => pokerResolveShowdown(), 1500);
+    } else if (s.phase === 'handend') {
+      // Already handled
+    }
+  }
+
+  // ---------- Advance betting / phase ----------
+  function pokerAdvance(s) {
+    // Check: only one player left in hand → award pot, hand ends
+    if (s.inHand.length === 1) {
+      const winner = s.inHand[0];
+      s.chips[winner] += s.pot;
+      s.lastHandResults = {
+        type: 'fold-win',
+        winners: [winner],
+        descr: 'All others folded',
+        pots: [{ amount: s.pot, winners: [winner] }],
+      };
+      s.pot = 0;
+      s.phase = 'handend';
+      return;
+    }
+
+    // Are all live (non-all-in) players done acting AND bets equal?
+    const liveActors = s.inHand.filter(n => !s.allIn.includes(n));
+    const allActed = liveActors.every(n => s.hasActed.includes(n));
+    const targetBet = s.currentBet;
+    const allMatched = liveActors.every(n => (s.bets[n] || 0) === targetBet);
+
+    if (allActed && allMatched) {
+      // Move to next phase
+      pokerNextPhase(s);
+    } else {
+      // Move turn to next live (non-all-in) player still in hand
+      const order = s.turnOrder;
+      const curIdx = order.indexOf(s.currentTurn);
+      for (let i = 1; i <= order.length; i++) {
+        const cand = order[(curIdx + i) % order.length];
+        if (s.inHand.includes(cand) && !s.allIn.includes(cand)) {
+          s.currentTurn = cand;
+          return;
+        }
+      }
+      // Nobody left to act (all all-in) — advance
+      pokerNextPhase(s);
+    }
+  }
+
+  function pokerNextPhase(s) {
+    // Reset bets per round
+    for (const k of Object.keys(s.bets)) s.bets[k] = 0;
+    s.currentBet = 0;
+    s.minRaise   = s.config.bigBlind;
+    s.hasActed   = [];
+
+    // If everyone left is all-in OR only one+ active, just deal remaining cards and showdown
+    const liveActors = s.inHand.filter(n => !s.allIn.includes(n));
+    const skipBetting = liveActors.length <= 1;
+
+    if (s.phase === 'preflop') {
+      // Deal flop
+      s.deck.pop();                                              // burn
+      s.communityCards.push(s.deck.pop(), s.deck.pop(), s.deck.pop());
+      s.phase = 'flop';
+    } else if (s.phase === 'flop') {
+      s.deck.pop();
+      s.communityCards.push(s.deck.pop());
+      s.phase = 'turn';
+    } else if (s.phase === 'turn') {
+      s.deck.pop();
+      s.communityCards.push(s.deck.pop());
+      s.phase = 'river';
+    } else if (s.phase === 'river') {
+      s.phase = 'showdown';
+      return;
+    }
+
+    // If we're skipping betting, recurse to next phase
+    if (skipBetting && s.phase !== 'showdown') {
+      pokerNextPhase(s);
+      return;
+    }
+
+    // First to act post-flop = first live player after dealer
+    const order = s.turnOrder;
+    const dealerIdx = order.indexOf(s.dealerName);
+    if (dealerIdx === -1) {
+      // dealer folded out earlier — find next live
+      for (let i = 0; i < order.length; i++) {
+        if (s.inHand.includes(order[i]) && !s.allIn.includes(order[i])) { s.currentTurn = order[i]; return; }
+      }
+    } else {
+      for (let i = 1; i <= order.length; i++) {
+        const cand = order[(dealerIdx + i) % order.length];
+        if (s.inHand.includes(cand) && !s.allIn.includes(cand)) { s.currentTurn = cand; return; }
+      }
+    }
+  }
+
+  // ---------- Showdown: evaluate hands, distribute (with side pots) ----------
+  async function pokerResolveShowdown() {
+    if (typeof Hand === 'undefined' || !Hand.solve) {
+      // pokersolver didn't load; fall back to splitting pot evenly among inHand
+      console.error('pokersolver not loaded — splitting pot evenly');
+      const s = JSON.parse(JSON.stringify(currentRoom.state));
+      const winners = s.inHand.slice();
+      const share = Math.floor(s.pot / winners.length);
+      winners.forEach(n => { s.chips[n] += share; });
+      s.lastHandResults = { type: 'showdown', winners, descr: 'Pot split (engine unavailable)', pots: [{ amount: s.pot, winners }] };
+      s.pot = 0;
+      s.phase = 'handend';
+      await pushState(s);
+      return;
+    }
+
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+
+    // Build side pots based on totalBets among everyone who contributed
+    // Eligible per pot = inHand players with totalBets >= that level
+    const allContribs = Object.entries(s.totalBets).filter(([n, v]) => v > 0);
+    const showdownPlayers = s.inHand.slice();
+
+    // Sort showdown players by their total contribution ascending
+    const sortedShow = showdownPlayers.slice().sort((a, b) => (s.totalBets[a] || 0) - (s.totalBets[b] || 0));
+
+    const pots = [];
+    let prevLevel = 0;
+    for (const p of sortedShow) {
+      const level = s.totalBets[p] || 0;
+      if (level <= prevLevel) continue;
+      const layerSize = level - prevLevel;
+      let potAmt = 0;
+      for (const [n, contrib] of allContribs) {
+        const contribAtLevel = Math.min(layerSize, Math.max(0, contrib - prevLevel));
+        potAmt += contribAtLevel;
+      }
+      pots.push({
+        amount: potAmt,
+        eligible: showdownPlayers.filter(p2 => (s.totalBets[p2] || 0) >= level),
+        level,
+      });
+      prevLevel = level;
+    }
+
+    // Evaluate each showdown player's best 5-card hand
+    const hands = {};
+    const handDescr = {};
+    for (const name of showdownPlayers) {
+      const cards = s.hands[name].concat(s.communityCards);
+      try {
+        const h = Hand.solve(cards);
+        hands[name] = h;
+        handDescr[name] = h.descr;
+      } catch (e) {
+        console.error('Hand eval failed for', name, cards, e);
+      }
+    }
+
+    // Award each pot
+    const potResults = [];
+    for (const pot of pots) {
+      const eligibleHands = pot.eligible.map(n => hands[n]).filter(Boolean);
+      if (eligibleHands.length === 0) continue;
+      const winners = Hand.winners(eligibleHands);
+      const winnerNames = pot.eligible.filter(n => winners.includes(hands[n]));
+      const share = Math.floor(pot.amount / winnerNames.length);
+      const remainder = pot.amount - share * winnerNames.length;
+      winnerNames.forEach((n, i) => { s.chips[n] += share + (i === 0 ? remainder : 0); });
+      potResults.push({ amount: pot.amount, winners: winnerNames, descr: handDescr[winnerNames[0]] || '' });
+    }
+
+    s.lastHandResults = {
+      type: 'showdown',
+      winners: potResults[0]?.winners || [],
+      descr: potResults[0]?.descr || '',
+      pots: potResults,
+      hands: handDescr,
+    };
+    s.pot = 0;
+    s.phase = 'handend';
+
+    // Handle elimination/rebuy after pot distribution
+    pokerHandleBrokePlayers(s);
+
+    await pushState(s);
+  }
+
+  function pokerHandleBrokePlayers(s) {
+    const players = currentRoom.players || [];
+    for (const p of players) {
+      if (s.eliminated.includes(p.name)) continue;
+      if ((s.chips[p.name] || 0) <= 0) {
+        if (s.config.elimination) s.eliminated.push(p.name);
+        else                      s.chips[p.name] = s.config.startingChips;     // rebuy
+      }
+    }
+  }
+
+  // ---------- Hand-end summary ----------
+  function renderPokerHandEnd(wrap, s) {
+    const me = getPlayerName();
+    const isHost = currentRoom.host_name === me;
+    const r = s.lastHandResults;
+    const players = currentRoom.players || [];
+
+    let resultsHTML = '';
+    if (r) {
+      if (r.type === 'fold-win') {
+        resultsHTML = `<div class="pk-result-line">🏆 <strong>${esc(r.winners[0])}</strong> wins ${r.pots[0].amount} chips — everyone else folded.</div>`;
+      } else {
+        resultsHTML = r.pots.map((pot, i) => {
+          const lbl = i === 0 ? 'Main pot' : `Side pot ${i}`;
+          return `<div class="pk-result-line">
+            🏆 ${lbl} (${pot.amount}): <strong>${pot.winners.map(esc).join(', ')}</strong>
+            ${pot.descr ? ` — ${esc(pot.descr)}` : ''}
+          </div>`;
+        }).join('');
+        // Show all hand descriptions
+        if (r.hands) {
+          resultsHTML += '<div class="pk-result-hands">';
+          for (const [name, descr] of Object.entries(r.hands)) {
+            resultsHTML += `<div>${esc(name)}: ${esc(descr)}</div>`;
+          }
+          resultsHTML += '</div>';
+        }
+      }
+    }
+
+    // Show community + revealed hole cards
+    const community = s.communityCards.map(c => pokerCardHTML(c)).join('') || '<em>No flop</em>';
+
+    let stackHTML = '<div class="pk-stacks">';
+    for (const p of players) {
+      const elim = s.eliminated.includes(p.name);
+      stackHTML += `<div class="pk-stack ${elim ? 'elim' : ''}">
+        🏴‍☠️ ${esc(p.name)}: <strong>${s.chips[p.name] || 0}</strong>
+        ${elim ? ' <span class="pk-tag elim">OUT</span>' : ''}
+      </div>`;
+    }
+    stackHTML += '</div>';
+
+    wrap.innerHTML = `
+      <div class="pk-handend">
+        <h3 class="pk-handend-title">🃏 HAND #${s.handNumber} COMPLETE 🃏</h3>
+        <div class="pk-handend-community">${community}</div>
+        <div class="pk-handend-results">${resultsHTML}</div>
+        ${stackHTML}
+        ${isHost
+          ? `<button class="pk-btn next-hand" id="pk-next-hand-btn">🏴‍☠️ DEAL NEXT HAND</button>`
+          : `<div class="pk-action-msg">⏳ Waiting for host to deal next hand...</div>`}
+      </div>`;
+
+    const btn = $('pk-next-hand-btn');
+    if (btn) btn.addEventListener('click', pokerNextHand);
+  }
+
+  async function pokerNextHand() {
+    const me = getPlayerName();
+    if (currentRoom.host_name !== me) return;
+    const s = JSON.parse(JSON.stringify(currentRoom.state));
+    pokerStartHand(s);
+    await pushState(s);
+  }
+
+  // ---------- Game over ----------
+  function renderPokerFinished(wrap, s) {
+    const me = getPlayerName();
+    const isHost = currentRoom.host_name === me;
+    const players = currentRoom.players || [];
+    // Sort by chips desc
+    const sorted = players.slice().sort((a, b) => (s.chips[b.name] || 0) - (s.chips[a.name] || 0));
+    const winner = sorted[0];
+
+    wrap.innerHTML = `
+      <div class="pk-finished">
+        <h3 class="pk-finished-title">🏴‍☠️ GAME OVER 🏴‍☠️</h3>
+        <div class="pk-winner">🏆 <strong>${esc(winner.name)}</strong> wins with ${s.chips[winner.name] || 0} chips!</div>
+        <div class="pk-final-stacks">
+          ${sorted.map((p, i) => `
+            <div class="pk-final-row">
+              <span>#${i + 1} ${esc(p.name)}</span>
+              <span>${s.chips[p.name] || 0} chips</span>
+            </div>`).join('')}
+        </div>
+        ${isHost ? `<button class="pk-btn restart" id="pk-restart-btn">🔁 PLAY AGAIN</button>` : ''}
+      </div>`;
+    const btn = $('pk-restart-btn');
+    if (btn) btn.addEventListener('click', pokerRestart);
+  }
+
+  async function pokerRestart() {
+    const me = getPlayerName();
+    if (currentRoom.host_name !== me) return;
+    const s = GAMES.poker.initialState();
+    await pushState(s);
+  }
+
+  // =================================================================
   // DRAWING ROOM
   // =================================================================
   let drawCanvas = null, drawCtx = null;
@@ -887,24 +2306,30 @@
   let lastPt = null;
   let myStrokeColor = '#39ff14';
   let myStrokeSize  = 4;
+  let myTool        = 'brush';            // 'brush' | 'eraser'
+  const DRAW_BG     = '#0d0d2b';          // matches canvas background; eraser paints with this
   // Buffer of strokes received while we were rendering
   let drawHistory = [];
 
   function renderDrawRoom(wrap) {
-    const colors = ['#39ff14','#ff1493','#00ffff','#fff700','#ff6ec7','#ffffff','#ff8800','#9d4edd','#000000'];
-    const sizes  = [2, 4, 8, 16];
+    const colors = ['#39ff14','#ff1493','#00ffff','#fff700','#ff6ec7','#ffffff','#ff8800','#9d4edd','#ff0000','#0088ff','#000000'];
+    const sizes  = [2, 4, 8, 16, 28];
     wrap.innerHTML = `
       <div class="draw-toolbar">
+        <div class="draw-tools">
+          <button class="draw-tool ${myTool === 'brush'  ? 'active' : ''}" data-tool="brush">🖌️ BRUSH</button>
+          <button class="draw-tool ${myTool === 'eraser' ? 'active' : ''}" data-tool="eraser">🧼 ERASER</button>
+        </div>
         <div class="draw-colors">
           ${colors.map(c => `<button class="draw-color ${c === myStrokeColor ? 'active' : ''}" data-c="${c}" style="background:${c};"></button>`).join('')}
         </div>
         <div class="draw-sizes">
-          ${sizes.map(s => `<button class="draw-size ${s === myStrokeSize ? 'active' : ''}" data-s="${s}"><span style="width:${s*1.5}px;height:${s*1.5}px;background:${myStrokeColor};border-radius:50%;display:inline-block;"></span></button>`).join('')}
+          ${sizes.map(s => `<button class="draw-size ${s === myStrokeSize ? 'active' : ''}" data-s="${s}"><span style="width:${s*1.5}px;height:${s*1.5}px;background:${myTool === 'eraser' ? '#888' : myStrokeColor};border-radius:50%;display:inline-block;"></span></button>`).join('')}
         </div>
         <button class="draw-clear" id="draw-clear-btn">🧽 CLEAR ALL</button>
       </div>
-      <canvas id="draw-canvas" class="draw-canvas" width="800" height="500"></canvas>
-      <div class="draw-hint">Tip: pinch-zoom is disabled while drawing. Tap a color/size first.</div>`;
+      <canvas id="draw-canvas" class="draw-canvas" width="1200" height="800"></canvas>
+      <div class="draw-hint">Tip: pinch-zoom is disabled while drawing. Pick a tool, color, and size first.</div>`;
 
     drawCanvas = $('draw-canvas');
     drawCtx    = drawCanvas.getContext('2d');
@@ -914,11 +2339,22 @@
     // Restore any past strokes from buffer
     drawHistory.forEach(s => paintStroke(s, false));
 
+    // Tool toggle (brush / eraser)
+    wrap.querySelectorAll('.draw-tool').forEach(b => b.addEventListener('click', () => {
+      myTool = b.dataset.tool;
+      wrap.querySelectorAll('.draw-tool').forEach(x => x.classList.toggle('active', x.dataset.tool === myTool));
+      // Update size dot color preview based on current tool
+      wrap.querySelectorAll('.draw-size span').forEach(s =>
+        s.style.background = myTool === 'eraser' ? '#888' : myStrokeColor);
+    }));
+
     // Tools
     wrap.querySelectorAll('.draw-color').forEach(b => b.addEventListener('click', () => {
       myStrokeColor = b.dataset.c;
+      // Picking a color implicitly switches you to brush mode
+      myTool = 'brush';
+      wrap.querySelectorAll('.draw-tool').forEach(x => x.classList.toggle('active', x.dataset.tool === 'brush'));
       wrap.querySelectorAll('.draw-color').forEach(x => x.classList.toggle('active', x.dataset.c === myStrokeColor));
-      // re-render size dots with new color
       wrap.querySelectorAll('.draw-size span').forEach(s => s.style.background = myStrokeColor);
     }));
     wrap.querySelectorAll('.draw-size').forEach(b => b.addEventListener('click', () => {
@@ -940,8 +2376,8 @@
 
   function fitDrawCanvas() {
     if (!drawCanvas) return;
-    const cssW = Math.min(800, drawCanvas.parentElement.clientWidth - 8);
-    const cssH = Math.round(cssW * 0.625);                  // ~5:8 aspect
+    const cssW = Math.min(1200, drawCanvas.parentElement.clientWidth - 8);
+    const cssH = Math.round(cssW * 0.7);                    // taller, ~10:7 aspect
     const dpr  = window.devicePixelRatio || 1;
     drawCanvas.style.width  = cssW + 'px';
     drawCanvas.style.height = cssH + 'px';
@@ -951,7 +2387,7 @@
     drawCtx.lineCap = 'round';
     drawCtx.lineJoin = 'round';
     // Re-paint history at new size (we use absolute coords 0..1)
-    drawCtx.fillStyle = '#0d0d2b';
+    drawCtx.fillStyle = DRAW_BG;
     drawCtx.fillRect(0, 0, cssW, cssH);
     drawHistory.forEach(s => paintStroke(s, false));
   }
@@ -970,7 +2406,10 @@
   function dPointerMove(e) {
     if (!drawing) return;
     const pt = getNormPoint(e);
-    const stroke = { from: lastPt, to: pt, c: myStrokeColor, s: myStrokeSize };
+    // Eraser paints with the background color, slightly bigger for a nicer feel
+    const useColor = (myTool === 'eraser') ? DRAW_BG : myStrokeColor;
+    const useSize  = (myTool === 'eraser') ? myStrokeSize * 1.5 : myStrokeSize;
+    const stroke = { from: lastPt, to: pt, c: useColor, s: useSize };
     paintStroke(stroke, true);
     lastPt = pt;
     if (drawChannel) drawChannel.send({ type: 'broadcast', event: 'stroke', payload: stroke });
@@ -994,7 +2433,7 @@
     drawHistory = [];
     if (drawCtx && drawCanvas) {
       const r = drawCanvas.getBoundingClientRect();
-      drawCtx.fillStyle = '#0d0d2b';
+      drawCtx.fillStyle = DRAW_BG;
       drawCtx.fillRect(0, 0, r.width, r.height);
     }
     if (drawChannel) drawChannel.send({ type: 'broadcast', event: 'clear', payload: {} });
@@ -1014,7 +2453,7 @@
         drawHistory = [];
         if (drawCtx && drawCanvas) {
           const r = drawCanvas.getBoundingClientRect();
-          drawCtx.fillStyle = '#0d0d2b';
+          drawCtx.fillStyle = DRAW_BG;
           drawCtx.fillRect(0, 0, r.width, r.height);
         }
       })
