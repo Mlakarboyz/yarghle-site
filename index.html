@@ -501,6 +501,287 @@
     padding: 10px 15px; color: orange; font-size: 13px; margin-bottom: 10px;
   }
 
+  /* ============================================ */
+  /* GAMES TAB                                    */
+  /* ============================================ */
+  .games-container { max-width: 850px; margin: 0 auto; }
+  .games-h2 {
+    font-family: 'Bangers', cursive; font-size: 42px; color: var(--neon-cyan);
+    text-shadow: 3px 3px 0 var(--neon-pink); margin-bottom: 8px; text-align: center;
+    letter-spacing: 3px;
+  }
+  .games-tagline {
+    text-align: center; color: var(--neon-pink); font-family: 'Press Start 2P', monospace;
+    font-size: 11px; margin-bottom: 25px;
+  }
+  .games-name-line {
+    text-align: center; color: #888; font-size: 12px;
+    font-family: 'Press Start 2P', monospace; margin-bottom: 20px;
+  }
+  .games-name-line strong { color: var(--neon-green); }
+  .games-name-line a { color: var(--neon-cyan); }
+  .games-empty {
+    text-align: center; padding: 40px 20px; color: #555;
+    font-family: 'Press Start 2P', monospace; font-size: 12px;
+  }
+  .games-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
+  }
+  .game-card {
+    background: linear-gradient(145deg, #1a1a4e, #0d0d2b);
+    border: 3px solid; border-radius: 14px; padding: 20px 16px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    cursor: pointer; transition: transform 0.25s, box-shadow 0.25s;
+    font-family: 'Comic Neue', cursive;
+  }
+  .game-card:hover { transform: scale(1.04) rotate(-0.5deg); box-shadow: 0 0 25px currentColor; }
+  .game-emoji { font-size: 44px; line-height: 1; }
+  .game-name {
+    font-family: 'Bangers', cursive; font-size: 24px; letter-spacing: 2px;
+    text-shadow: 2px 2px 0 #000;
+  }
+  .game-blurb { color: #aaa; font-size: 13px; text-align: center; line-height: 1.4; min-height: 36px; }
+  .game-cta {
+    margin-top: 6px; padding: 6px 14px; color: #000; font-family: 'Bangers', cursive;
+    font-size: 14px; letter-spacing: 1px; border-radius: 6px;
+  }
+
+  .lobby-head {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .lobby-head h2 {
+    font-family: 'Bangers', cursive; font-size: 32px; letter-spacing: 2px;
+    flex: 1; text-align: center; min-width: 200px;
+  }
+  .lobby-back, .lobby-host {
+    padding: 8px 16px; font-family: 'Bangers', cursive; font-size: 16px; letter-spacing: 1px;
+    border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s;
+    white-space: nowrap;
+  }
+  .lobby-back { color: var(--neon-cyan); background: rgba(0,255,255,0.1); border: 1px solid var(--neon-cyan); }
+  .lobby-back:hover { background: rgba(0,255,255,0.2); }
+  .lobby-host { color: #000; }
+  .lobby-host:hover { transform: scale(1.05); }
+  .lobby-blurb {
+    text-align: center; color: #888; font-size: 13px;
+    margin-bottom: 18px; font-style: italic;
+  }
+  .lobby-rooms { display: flex; flex-direction: column; gap: 10px; }
+  .room-card {
+    background: linear-gradient(145deg, #1a1a4e, #0d0d2b);
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 14px;
+    transition: border-color 0.2s;
+  }
+  .room-card:hover { border-color: var(--neon-cyan); }
+  .room-card-head {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .room-host { font-family: 'Bangers', cursive; font-size: 18px; color: var(--neon-pink); letter-spacing: 1px; }
+  .room-tag {
+    font-family: 'Press Start 2P', monospace; font-size: 8px; padding: 3px 7px;
+    border-radius: 4px; letter-spacing: 1px;
+  }
+  .room-tag.waiting   { background: rgba(255,247,0,0.15); color: var(--neon-yellow); border: 1px solid var(--neon-yellow); }
+  .room-tag.playing   { background: rgba(57,255,20,0.15); color: var(--neon-green);  border: 1px solid var(--neon-green); }
+  .room-tag.finished  { background: rgba(255,0,0,0.15);   color: var(--sketch-red);  border: 1px solid var(--sketch-red); }
+  .room-age { color: #555; font-family: 'Press Start 2P', monospace; font-size: 9px; margin-left: auto; }
+  .room-card-body { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 12px; }
+  .room-meta { color: #aaa; font-size: 13px; }
+  .room-card-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .room-btn {
+    padding: 8px 16px; font-family: 'Bangers', cursive; font-size: 15px; letter-spacing: 1px;
+    border-radius: 6px; cursor: pointer; transition: transform 0.2s; border: none;
+  }
+  .room-btn.join { color: #000; background: linear-gradient(135deg, var(--neon-green), var(--neon-cyan)); }
+  .room-btn.spectate { color: var(--neon-pink); background: rgba(255,20,147,0.1); border: 1px solid var(--neon-pink); }
+  .room-btn:hover { transform: scale(1.05); }
+
+  .room-head-row {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .room-head-row h2 {
+    font-family: 'Bangers', cursive; font-size: 28px; letter-spacing: 2px;
+    flex: 1; text-align: center; min-width: 160px;
+  }
+  .room-status {
+    font-family: 'Press Start 2P', monospace; font-size: 9px; padding: 4px 10px;
+    border-radius: 4px; letter-spacing: 1px;
+  }
+  .room-status.waiting  { background: rgba(255,247,0,0.15); color: var(--neon-yellow); border: 1px solid var(--neon-yellow); }
+  .room-status.playing  { background: rgba(57,255,20,0.15); color: var(--neon-green);  border: 1px solid var(--neon-green); }
+  .room-status.finished { background: rgba(255,0,0,0.15);   color: var(--sketch-red);  border: 1px solid var(--sketch-red); }
+  .room-people {
+    background: rgba(255,255,255,0.03); border-radius: 8px; padding: 10px 14px;
+    margin-bottom: 16px; font-size: 13px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .player-pill, .spec-pill {
+    display: inline-block; padding: 3px 9px; border-radius: 14px; margin: 2px 4px 2px 0;
+    font-size: 12px; background: rgba(57,255,20,0.1); color: var(--neon-green);
+    border: 1px solid rgba(57,255,20,0.3);
+  }
+  .player-pill.me { background: rgba(57,255,20,0.25); border-color: var(--neon-green); font-weight: bold; }
+  .spec-pill { background: rgba(0,255,255,0.08); color: var(--neon-cyan); border-color: rgba(0,255,255,0.3); }
+  .slot-label { font-family: 'Press Start 2P', monospace; font-size: 8px; color: #fff; margin-left: 4px; }
+
+  .game-waiting {
+    text-align: center; padding: 60px 20px; color: var(--neon-yellow);
+    font-family: 'Press Start 2P', monospace; font-size: 14px;
+    background: rgba(255,247,0,0.05); border: 2px dashed var(--neon-yellow); border-radius: 12px;
+  }
+  .game-rematch {
+    display: block; margin: 18px auto 0; padding: 10px 24px;
+    font-family: 'Bangers', cursive; font-size: 18px; letter-spacing: 2px; color: #000;
+    background: linear-gradient(135deg, var(--neon-green), var(--neon-cyan));
+    border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s;
+  }
+  .game-rematch:hover { transform: scale(1.05); }
+
+  .ttt-status {
+    text-align: center; font-family: 'Bangers', cursive; font-size: 22px;
+    color: var(--neon-yellow); margin-bottom: 14px; letter-spacing: 2px;
+  }
+  .ttt-board {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+    max-width: 360px; margin: 0 auto; aspect-ratio: 1;
+    background: var(--neon-yellow); padding: 6px; border-radius: 10px;
+  }
+  .ttt-cell {
+    background: #0d0d2b; border: none; border-radius: 6px; cursor: pointer;
+    font-size: clamp(34px, 10vw, 60px); display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s; aspect-ratio: 1;
+  }
+  .ttt-cell:hover:not(:disabled) { background: #1a1a4e; }
+  .ttt-cell:disabled { cursor: default; }
+  .ttt-cell.win { background: rgba(57,255,20,0.3); animation: tttWin 0.6s ease infinite alternate; }
+  @keyframes tttWin { from { background: rgba(57,255,20,0.3); } to { background: rgba(57,255,20,0.6); } }
+
+  .c4-status {
+    text-align: center; font-family: 'Bangers', cursive; font-size: 22px;
+    color: var(--neon-pink); margin-bottom: 14px; letter-spacing: 2px;
+  }
+  .c4-board {
+    max-width: 480px; margin: 0 auto; background: linear-gradient(135deg, #2a4dff, #1133aa);
+    border-radius: 10px; padding: 8px;
+  }
+  .c4-drops { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+  .c4-drop {
+    aspect-ratio: 1; background: rgba(255,255,255,0.1); color: white; border: none; border-radius: 6px;
+    cursor: pointer; font-size: 18px; transition: background 0.15s;
+  }
+  .c4-drop:hover:not(:disabled) { background: rgba(255,255,255,0.25); }
+  .c4-drop:disabled { opacity: 0.3; cursor: default; }
+  .c4-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+  .c4-row:last-child { margin-bottom: 0; }
+  .c4-cell {
+    aspect-ratio: 1; background: #0d0d2b; border-radius: 50%;
+    box-shadow: inset 0 3px 6px rgba(0,0,0,0.5);
+  }
+  .c4-cell.filled.p0 { background: radial-gradient(circle at 30% 30%, #ff6b6b, #cc0000); }
+  .c4-cell.filled.p1 { background: radial-gradient(circle at 30% 30%, #fffd75, #d4a800); }
+  .c4-cell.win { animation: c4Win 0.5s ease infinite alternate; }
+  @keyframes c4Win { from { box-shadow: 0 0 0 0 var(--neon-green); } to { box-shadow: 0 0 14px 4px var(--neon-green); } }
+
+  .ck-status {
+    text-align: center; font-family: 'Bangers', cursive; font-size: 22px;
+    color: var(--neon-green); margin-bottom: 14px; letter-spacing: 2px;
+  }
+  .ck-board {
+    display: grid; grid-template-columns: repeat(8, 1fr);
+    max-width: 480px; margin: 0 auto; aspect-ratio: 1;
+    border: 4px solid var(--neon-green); border-radius: 8px; overflow: hidden;
+    box-shadow: 0 0 20px rgba(57,255,20,0.3);
+  }
+  .ck-cell {
+    position: relative; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; aspect-ratio: 1;
+  }
+  .ck-cell.light { background: #d8c19c; }
+  .ck-cell.dark  { background: #6b4423; }
+  .ck-cell.sel    { box-shadow: inset 0 0 0 4px var(--neon-yellow); }
+  .ck-cell.target { background: radial-gradient(circle, rgba(57,255,20,0.6), rgba(57,255,20,0.2)); }
+  .ck-piece {
+    width: 76%; height: 76%; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(14px, 3vw, 22px);
+    box-shadow: 0 3px 6px rgba(0,0,0,0.5), inset 0 -3px 6px rgba(0,0,0,0.3);
+  }
+  .ck-piece.p0 { background: radial-gradient(circle at 30% 30%, #444, #111); color: gold; }
+  .ck-piece.p1 { background: radial-gradient(circle at 30% 30%, #ff6b6b, #cc0000); color: gold; }
+  .ck-piece.king { box-shadow: 0 3px 6px rgba(0,0,0,0.5), inset 0 -3px 6px rgba(0,0,0,0.3), 0 0 8px gold; }
+
+  .ch-status {
+    text-align: center; font-family: 'Bangers', cursive; font-size: 22px;
+    color: var(--neon-cyan); margin-bottom: 14px; letter-spacing: 2px;
+  }
+  .ch-board {
+    display: grid; grid-template-columns: repeat(8, 1fr);
+    max-width: 520px; margin: 0 auto; aspect-ratio: 1;
+    border: 4px solid var(--neon-cyan); border-radius: 6px; overflow: hidden;
+    box-shadow: 0 0 25px rgba(0,255,255,0.3);
+  }
+  .ch-cell {
+    position: relative; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; aspect-ratio: 1; user-select: none;
+  }
+  .ch-cell.light { background: #f0d9b5; }
+  .ch-cell.dark  { background: #b58863; }
+  .ch-cell.sel    { box-shadow: inset 0 0 0 4px var(--neon-yellow); }
+  .ch-cell.target::after {
+    content: ''; position: absolute; width: 30%; height: 30%; border-radius: 50%;
+    background: rgba(57,255,20,0.55); pointer-events: none;
+  }
+  .ch-cell.target:has(.ch-piece:not(:empty))::after {
+    width: 88%; height: 88%; background: transparent;
+    border: 4px solid rgba(255,0,0,0.6); border-radius: 50%;
+  }
+  .ch-cell.last { background: rgba(255,255,0,0.35) !important; }
+  .ch-piece {
+    font-size: clamp(28px, 7vw, 44px); line-height: 1;
+    text-shadow: 0 2px 3px rgba(0,0,0,0.4);
+    pointer-events: none;
+  }
+
+  .draw-toolbar {
+    display: flex; gap: 12px; margin-bottom: 10px; flex-wrap: wrap;
+    align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.04); padding: 10px; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .draw-colors, .draw-sizes { display: flex; gap: 6px; flex-wrap: wrap; }
+  .draw-color {
+    width: 32px; height: 32px; border-radius: 50%; border: 2px solid #444;
+    cursor: pointer; padding: 0; transition: transform 0.15s;
+  }
+  .draw-color:hover { transform: scale(1.1); }
+  .draw-color.active { border-color: var(--neon-yellow); box-shadow: 0 0 10px var(--neon-yellow); }
+  .draw-size {
+    min-width: 38px; height: 32px; border-radius: 6px; border: 2px solid #444;
+    background: #0d0d2b; cursor: pointer; padding: 0 6px;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: border-color 0.15s;
+  }
+  .draw-size.active { border-color: var(--neon-yellow); }
+  .draw-clear {
+    margin-left: auto; padding: 6px 14px; font-family: 'Bangers', cursive;
+    background: rgba(255,0,0,0.15); color: var(--sketch-red);
+    border: 1px solid var(--sketch-red); border-radius: 6px; cursor: pointer; letter-spacing: 1px;
+  }
+  .draw-clear:hover { background: rgba(255,0,0,0.3); }
+  .draw-canvas {
+    display: block; margin: 0 auto; background: #0d0d2b;
+    border: 3px solid var(--neon-pink); border-radius: 10px;
+    box-shadow: 0 0 25px rgba(255,20,147,0.3);
+    touch-action: none; max-width: 100%;
+  }
+  .draw-hint {
+    text-align: center; color: #666; font-size: 11px; margin-top: 8px;
+    font-family: 'Press Start 2P', monospace;
+  }
+
   @media (max-width: 600px) {
     .products { grid-template-columns: 1fr; }
     .testimonial-grid { grid-template-columns: 1fr; }
@@ -510,6 +791,15 @@
     .thread-item { flex-direction: column; }
     .thread-votes { flex-direction: row; }
     .mod-login-bar { justify-content: center; }
+    .games-grid { grid-template-columns: 1fr 1fr; }
+    .game-name { font-size: 20px; }
+    .game-emoji { font-size: 36px; }
+    .lobby-head h2 { font-size: 24px; }
+    .room-head-row h2 { font-size: 22px; }
+    .ttt-board, .c4-board, .ck-board, .ch-board { max-width: 100%; }
+    .room-card-actions .room-btn { flex: 1; }
+    .draw-toolbar { gap: 8px; }
+    .draw-clear { margin-left: 0; }
   }
 </style>
 </head>
@@ -532,6 +822,7 @@
   <button class="tab-btn active" onclick="switchTab('deals', this)">🛒 FREE DEALS</button>
   <button class="tab-btn" onclick="switchTab('about', this)">🏴‍☠️ ABOUT ME</button>
   <button class="tab-btn" onclick="switchTab('forum', this)">💬 TAVERN</button>
+  <button class="tab-btn" onclick="switchTab('games', this)">🎮 GAMES</button>
   <button class="tab-btn" onclick="switchTab('sound', this)">🔊 CRINKLE</button>
 </nav>
 
@@ -705,7 +996,32 @@
 </div>
 </div>
 
-<!-- ===== TAB 4: SOUND ===== -->
+<!-- ===== TAB 4: GAMES ===== -->
+<div class="tab-content" id="tab-games">
+<div class="main-content">
+  <div class="games-container">
+
+    <!-- VIEW 1: Game Picker -->
+    <div id="games-picker">
+      <h2 class="games-h2">🎮 YARGHLE'S ARCADE 🎮</h2>
+      <p class="games-tagline">Pick yer poison, ye scallywag.</p>
+      <div id="games-picker-grid"></div>
+    </div>
+
+    <!-- VIEW 2: Lobby (rendered dynamically) -->
+    <div id="games-lobby" style="display:none;"></div>
+
+    <!-- VIEW 3: In-Room (header + game body) -->
+    <div id="games-room" style="display:none;">
+      <div id="room-head"></div>
+      <div id="room-game"></div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ===== TAB 5: SOUND ===== -->
 <div class="tab-content" id="tab-sound">
 <div class="main-content">
   <div class="sound-section">
@@ -765,6 +1081,12 @@
   const SUPABASE_ANON_KEY = 'sb_publishable_m0QBHdxwUYvTXvR5jaKX5w_PVtcKKoI';
   const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 </script>
+
+<!-- chess.js library (for the chess game) -->
+<script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
+
+<!-- Yarghle Games module -->
+<script src="js/games.js"></script>
 
 <script src="js/effects.js"></script>
 </body>
