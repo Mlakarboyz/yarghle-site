@@ -20,7 +20,7 @@
   let drawChannel     = null;
   let lobbyRooms      = [];
 
-  const SUPA = () => window.supabaseClient;
+  const SUPA = () => (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
 
   // ============ PLAYER NAME (persisted) ============
   function getPlayerName()   { return localStorage.getItem('yarghle_player_name') || ''; }
