@@ -1136,6 +1136,32 @@
   padding: 30px 20px; max-width: 500px; margin: 0 auto; text-align: center;
   box-shadow: 0 0 35px rgba(255,215,0,0.4);
 }
+.bj-pill-row {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.bj-pill {
+  padding: 8px 14px; font-family: 'Bangers', cursive; font-size: 14px;
+  letter-spacing: 1px; border-radius: 8px; cursor: pointer;
+  background: #0d0d2b; color: #888;
+  border: 2px solid #444; transition: all 0.15s;
+}
+.bj-pill:hover:not(:disabled) { color: #fff; border-color: #888; }
+.bj-pill:disabled { opacity: 0.5; cursor: not-allowed; }
+.bj-pill.active {
+  color: #000; background: var(--neon-yellow); border-color: var(--neon-yellow);
+  box-shadow: 0 0 10px var(--neon-yellow);
+  transform: scale(1.05);
+}
+.bj-config-label {
+  font-family: 'Bangers', cursive; font-size: 16px; color: var(--neon-yellow);
+  letter-spacing: 1px; min-width: 140px; display: inline-block;
+}
+.bj-elim-tag {
+  display: inline-block; padding: 3px 10px; border-radius: 6px;
+  font-family: 'Press Start 2P', monospace; font-size: 9px;
+  background: rgba(255,247,0,0.15); color: var(--neon-yellow);
+  border: 1px solid var(--neon-yellow); letter-spacing: 1px;
+}
 .pk-finished-title, .bj-finished-title {
   font-family: 'Bangers', cursive; font-size: 32px; color: gold;
   letter-spacing: 3px; margin-bottom: 16px;
