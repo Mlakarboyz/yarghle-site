@@ -148,7 +148,7 @@
   }
 
   async function loadLobby() {
-    if (!SUPA()) return;
+    if (!SUPA()) { showLobbyError('Supabase client not loaded. Check the script tags in index.html.'); return; }
     const cutoff = new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString();   // hide rooms idle > 6h
     const { data, error } = await SUPA()
       .from('game_rooms')
@@ -159,13 +159,36 @@
       .order('updated_at', { ascending: false })
       .limit(50);
 
-    if (error) { console.error('Lobby load error:', error); return; }
+    if (error) {
+      console.error('Lobby load error:', error);
+      showLobbyError('Failed to load lobby: ' + (error.message || 'Unknown error') + ' (code: ' + (error.code || '?') + ')');
+      return;
+    }
     lobbyRooms = data || [];
     renderLobby();
 
     // Best-effort cleanup: nuke any rooms idle > 24h
     const oldCutoff = new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString();
     SUPA().from('game_rooms').delete().lt('updated_at', oldCutoff).then(() => {});
+  }
+
+  function showLobbyError(msg) {
+    const g = GAMES[currentGameType] || { name: 'GAMES', emoji: '⚠️', color: 'var(--sketch-red)' };
+    const wrap = $('games-lobby');
+    if (!wrap) return;
+    wrap.innerHTML = `
+      <div class="lobby-head">
+        <button class="lobby-back" id="lobby-back-btn">← GAMES</button>
+        <h2 style="color: var(--sketch-red);">⚠️ ERROR</h2>
+        <span style="min-width: 100px;"></span>
+      </div>
+      <div class="games-empty" style="color: var(--sketch-red); font-size: 13px; line-height: 1.6;">${esc(msg)}</div>
+      <div class="games-empty" style="font-size: 10px; padding-top: 0;">
+        Open browser DevTools (F12) → Console tab for full details.<br>
+        Most common cause: the <code>game_rooms</code> table doesn't exist yet — re-run the SQL in Supabase.
+      </div>`;
+    const back = $('lobby-back-btn');
+    if (back) back.addEventListener('click', leaveLobby);
   }
 
   function renderLobby() {
