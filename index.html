@@ -782,6 +782,386 @@
     font-family: 'Press Start 2P', monospace;
   }
 
+.cat-pills {
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  margin-bottom: 12px;
+}
+.cat-pill {
+  padding: 8px 16px; font-family: 'Bangers', cursive; font-size: 15px;
+  letter-spacing: 1px; border-radius: 999px; cursor: pointer;
+  background: rgba(255,255,255,0.05); color: #aaa;
+  border: 2px solid rgba(255,255,255,0.15); transition: all 0.2s;
+}
+.cat-pill:hover { color: #fff; border-color: var(--neon-cyan); }
+.cat-pill.active {
+  color: #000; background: var(--neon-cyan); border-color: var(--neon-cyan);
+  box-shadow: 0 0 12px rgba(0,255,255,0.5);
+}
+.games-search-row { margin-bottom: 18px; display: flex; justify-content: center; }
+.games-search {
+  width: 100%; max-width: 400px; padding: 10px 16px; border-radius: 999px;
+  border: 2px solid #333; background: #111; color: white;
+  font-family: 'Comic Neue', cursive; font-size: 14px;
+}
+.games-search:focus { outline: none; border-color: var(--neon-cyan); box-shadow: 0 0 10px rgba(0,255,255,0.2); }
+.games-search::placeholder { color: #555; }
+ 
+/* ========== DRAWING ROOM TOOL TOGGLE ========== */
+.draw-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+.draw-tool {
+  padding: 6px 12px; font-family: 'Bangers', cursive; font-size: 14px;
+  letter-spacing: 1px; border-radius: 6px; cursor: pointer;
+  background: #0d0d2b; color: #aaa; border: 2px solid #444;
+  transition: all 0.15s;
+}
+.draw-tool:hover { color: #fff; border-color: #888; }
+.draw-tool.active {
+  color: #000; background: var(--neon-yellow); border-color: var(--neon-yellow);
+  box-shadow: 0 0 8px var(--neon-yellow);
+}
+ 
+/* ========== SHARED CASINO LOBBY STYLES ========== */
+.bj-lobby, .pk-lobby {
+  background: linear-gradient(145deg, #1a1a4e, #0d0d2b);
+  border: 2px solid var(--neon-yellow); border-radius: 14px;
+  padding: 22px; max-width: 600px; margin: 0 auto;
+}
+.bj-lobby-title, .pk-lobby-title {
+  font-family: 'Bangers', cursive; font-size: 28px; color: var(--neon-yellow);
+  text-align: center; letter-spacing: 2px; margin-bottom: 16px;
+  text-shadow: 2px 2px 0 var(--sketch-red);
+}
+.bj-config, .pk-config {
+  background: rgba(0,0,0,0.3); border-radius: 10px; padding: 14px; margin-bottom: 16px;
+}
+.bj-config-row, .pk-config-row {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.bj-config-row:last-of-type, .pk-config-row:last-of-type { border-bottom: none; }
+.bj-config-row label, .pk-config-row label {
+  flex: 1; min-width: 130px; color: #ccc; font-size: 14px;
+}
+.bj-config-row input[type="number"], .pk-config-row input[type="number"] {
+  width: 110px; padding: 6px 10px; border-radius: 6px;
+  background: #0d0d2b; color: white; border: 1px solid #444;
+  font-family: 'Comic Neue', cursive; font-size: 14px;
+}
+.bj-config-row input[type="number"]:disabled, .pk-config-row input[type="number"]:disabled { opacity: 0.5; }
+.bj-config-row input[type="checkbox"], .pk-config-row input[type="checkbox"] {
+  width: 20px; height: 20px; cursor: pointer;
+}
+.bj-config-hint, .pk-config-hint { font-size: 12px; color: #888; font-style: italic; }
+ 
+.bj-ready-list, .pk-ready-list {
+  background: rgba(0,0,0,0.3); border-radius: 10px;
+  padding: 8px; margin-bottom: 16px;
+}
+.bj-ready-row, .pk-ready-row {
+  display: flex; justify-content: space-between; padding: 8px 12px;
+  border-radius: 6px; margin-bottom: 4px;
+  background: rgba(255,255,255,0.03); transition: all 0.2s;
+}
+.bj-ready-row.ready, .pk-ready-row.ready {
+  background: rgba(57,255,20,0.1); border-left: 3px solid var(--neon-green);
+}
+.bj-lobby-actions, .pk-lobby-actions {
+  display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+}
+ 
+/* ========== BUTTONS (shared casino) ========== */
+.bj-btn, .pk-btn {
+  padding: 10px 20px; font-family: 'Bangers', cursive; font-size: 16px;
+  letter-spacing: 2px; border-radius: 8px; cursor: pointer;
+  border: none; transition: transform 0.15s; color: #000;
+}
+.bj-btn:hover:not(:disabled), .pk-btn:hover:not(:disabled) { transform: scale(1.04); }
+.bj-btn:disabled, .pk-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.bj-btn.ready, .pk-btn.ready {
+  background: rgba(255,247,0,0.15); color: var(--neon-yellow);
+  border: 2px solid var(--neon-yellow);
+}
+.bj-btn.ready.on, .pk-btn.ready.on {
+  background: var(--neon-green); color: #000; border-color: var(--neon-green);
+}
+.bj-btn.start, .pk-btn.start, .bj-btn.next-hand, .pk-btn.next-hand,
+.bj-btn.restart, .pk-btn.restart {
+  background: linear-gradient(135deg, var(--neon-green), var(--neon-cyan));
+}
+.bj-btn.fold, .pk-btn.fold {
+  background: rgba(255,0,0,0.2); color: var(--sketch-red);
+  border: 2px solid var(--sketch-red);
+}
+.bj-btn.check, .pk-btn.check, .bj-btn.call, .pk-btn.call {
+  background: linear-gradient(135deg, var(--neon-cyan), #0088ff);
+}
+.bj-btn.raise, .pk-btn.raise, .bj-btn.allin, .pk-btn.allin {
+  background: linear-gradient(135deg, var(--neon-pink), #ff6ec7);
+}
+ 
+/* ========== BLACKJACK ========== */
+.bj-table {
+  background: linear-gradient(145deg, #0d3d1d, #051a0d);
+  border: 3px solid var(--neon-yellow); border-radius: 14px;
+  padding: 18px; max-width: 720px; margin: 0 auto;
+  box-shadow: 0 0 30px rgba(255,247,0,0.15);
+}
+.bj-table-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+}
+.bj-phase {
+  font-family: 'Press Start 2P', monospace; font-size: 11px;
+  color: var(--neon-yellow);
+}
+.bj-dealer {
+  background: rgba(0,0,0,0.4); border-radius: 10px;
+  padding: 12px; margin-bottom: 12px;
+  border: 1px solid rgba(255,247,0,0.3);
+}
+.bj-dealer-label {
+  font-family: 'Bangers', cursive; font-size: 18px; color: var(--neon-yellow);
+  letter-spacing: 1px; margin-bottom: 8px;
+}
+.bj-cards {
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+}
+.bj-card {
+  background: white; color: black; border-radius: 8px;
+  padding: 8px 10px; min-width: 48px; min-height: 64px;
+  display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  font-family: 'Bangers', cursive; font-size: 18px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+}
+.bj-card.red    { color: var(--sketch-red); }
+.bj-card.facedown {
+  background: linear-gradient(135deg, var(--sketch-red), #800);
+  color: white; font-size: 24px;
+}
+.bj-card-rank { font-size: 18px; line-height: 1; }
+.bj-card-suit { font-size: 16px; line-height: 1; }
+.bj-total { color: var(--neon-yellow); font-family: 'Press Start 2P', monospace; font-size: 12px; margin-left: 8px; }
+.bj-players {
+  display: grid; gap: 10px; margin-bottom: 12px;
+}
+@media (min-width: 700px) {
+  .bj-players { grid-template-columns: 1fr 1fr; }
+}
+.bj-player {
+  background: rgba(0,0,0,0.3); border-radius: 10px; padding: 10px;
+  border: 1px solid rgba(255,255,255,0.1); transition: all 0.2s;
+}
+.bj-player.me { border-color: var(--neon-green); background: rgba(57,255,20,0.05); }
+.bj-player.active { box-shadow: 0 0 15px var(--neon-yellow); border-color: var(--neon-yellow); }
+.bj-player.busted { opacity: 0.5; }
+.bj-player-head {
+  display: flex; justify-content: space-between; margin-bottom: 6px;
+  font-family: 'Bangers', cursive; font-size: 16px; letter-spacing: 1px;
+}
+.bj-player-foot {
+  display: flex; gap: 12px; margin-top: 6px; font-size: 12px;
+  flex-wrap: wrap;
+}
+.bj-chips { color: var(--neon-yellow); }
+.bj-bet   { color: var(--neon-cyan); }
+.bj-tag {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-family: 'Press Start 2P', monospace; font-size: 8px;
+}
+.bj-tag.win  { background: var(--neon-green); color: #000; }
+.bj-tag.lose { background: var(--sketch-red); color: #fff; }
+.bj-tag.push { background: #888; color: #000; }
+.bj-tag.bust { background: #500; color: #fff; }
+.bj-tag.bj   { background: gold; color: #000; }
+.bj-tag.elim { background: #333; color: #888; }
+.bj-tag.turn { background: var(--neon-yellow); color: #000; animation: pulse 1.5s infinite; }
+.bj-tag.fold { background: rgba(255,0,0,0.3); color: #faa; }
+.bj-actions {
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  background: rgba(0,0,0,0.3); border-radius: 10px; padding: 12px;
+}
+.bj-action-msg {
+  text-align: center; color: #aaa; font-style: italic; padding: 8px;
+  width: 100%;
+}
+.bj-bet-input {
+  display: flex; gap: 6px; align-items: center;
+  background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px;
+}
+.bj-bet-input input {
+  width: 100px; padding: 6px 8px; border-radius: 4px;
+  background: #0d0d2b; color: white; border: 1px solid #444;
+  font-family: 'Comic Neue', cursive;
+}
+ 
+/* ========== POKER ========== */
+.pk-table {
+  background: linear-gradient(145deg, #0d2d4d, #051429);
+  border: 3px solid var(--neon-pink); border-radius: 14px;
+  padding: 16px; max-width: 800px; margin: 0 auto;
+  box-shadow: 0 0 30px rgba(255,20,147,0.2);
+}
+.pk-table-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 14px; flex-wrap: wrap; gap: 8px;
+  padding-bottom: 10px; border-bottom: 1px dashed rgba(255,255,255,0.15);
+}
+.pk-phase {
+  font-family: 'Press Start 2P', monospace; font-size: 11px;
+  color: var(--neon-pink);
+}
+.pk-pot {
+  font-family: 'Bangers', cursive; font-size: 22px;
+  color: gold; letter-spacing: 2px;
+  text-shadow: 0 0 8px gold, 1px 1px 0 #000;
+}
+.pk-community {
+  display: flex; gap: 6px; justify-content: center;
+  margin-bottom: 16px; padding: 10px;
+  background: rgba(0,0,0,0.4); border-radius: 10px;
+}
+.pk-card {
+  background: white; color: black; border-radius: 6px;
+  width: 44px; height: 62px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-family: 'Bangers', cursive;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  flex-shrink: 0;
+}
+.pk-card.red   { color: var(--sketch-red); }
+.pk-card.black { color: #000; }
+.pk-card.empty {
+  background: rgba(255,255,255,0.05); border: 2px dashed rgba(255,255,255,0.2);
+}
+.pk-card.facedown {
+  background: linear-gradient(135deg, var(--neon-pink), #800040);
+  color: white; font-size: 18px; align-items: center; justify-content: center;
+}
+.pk-rank { font-size: 18px; line-height: 1; margin-bottom: 4px; }
+.pk-suit { font-size: 18px; line-height: 1; }
+.pk-players {
+  display: grid; gap: 8px; margin-bottom: 14px;
+}
+@media (min-width: 700px) {
+  .pk-players { grid-template-columns: 1fr 1fr; }
+}
+.pk-player {
+  background: rgba(0,0,0,0.35); border-radius: 10px; padding: 10px;
+  border: 1px solid rgba(255,255,255,0.08); transition: all 0.2s;
+}
+.pk-player.me { border-color: var(--neon-green); background: rgba(57,255,20,0.05); }
+.pk-player.active { box-shadow: 0 0 15px var(--neon-pink); border-color: var(--neon-pink); }
+.pk-player.folded { opacity: 0.45; }
+.pk-player-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 6px; flex-wrap: wrap; gap: 6px;
+}
+.pk-player-name { font-family: 'Bangers', cursive; font-size: 16px; letter-spacing: 1px; color: #fff; }
+.pk-cards {
+  display: flex; gap: 4px; margin: 6px 0;
+}
+.pk-cards.faded { opacity: 0.5; }
+.pk-player-foot {
+  display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px;
+}
+.pk-chips { color: var(--neon-yellow); font-weight: bold; }
+.pk-bet { color: var(--neon-cyan); }
+.pk-tag {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-family: 'Press Start 2P', monospace; font-size: 8px;
+}
+.pk-tag.turn  { background: var(--neon-pink); color: #000; animation: pulse 1.5s infinite; }
+.pk-tag.fold  { background: rgba(255,0,0,0.3); color: #faa; }
+.pk-tag.allin { background: gold; color: #000; }
+.pk-tag.elim  { background: #333; color: #888; }
+.pk-actions {
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  background: rgba(0,0,0,0.3); border-radius: 10px; padding: 12px;
+}
+.pk-action-msg {
+  text-align: center; color: #aaa; font-style: italic; padding: 8px;
+  width: 100%;
+}
+.pk-raise-group {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+}
+.pk-raise-group input {
+  width: 100px; padding: 8px 10px; border-radius: 6px;
+  background: #0d0d2b; color: white; border: 1px solid #444;
+  font-family: 'Comic Neue', cursive; font-size: 14px;
+}
+ 
+/* Hand-end summary */
+.pk-handend, .bj-roundend {
+  background: linear-gradient(145deg, #1a1a4e, #0d0d2b);
+  border: 3px solid gold; border-radius: 14px;
+  padding: 20px; max-width: 600px; margin: 0 auto;
+  box-shadow: 0 0 25px rgba(255,215,0,0.3);
+}
+.pk-handend-title, .bj-roundend-title {
+  font-family: 'Bangers', cursive; font-size: 24px; color: gold;
+  text-align: center; letter-spacing: 2px; margin-bottom: 16px;
+  text-shadow: 2px 2px 0 var(--sketch-red);
+}
+.pk-handend-community {
+  display: flex; gap: 6px; justify-content: center;
+  margin: 10px auto 16px; padding: 8px;
+  background: rgba(0,0,0,0.3); border-radius: 8px;
+}
+.pk-handend-results {
+  background: rgba(0,0,0,0.3); border-radius: 8px; padding: 12px; margin-bottom: 14px;
+}
+.pk-result-line { padding: 6px 0; color: #fff; font-size: 14px; }
+.pk-result-line strong { color: gold; }
+.pk-result-hands {
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  font-size: 13px; color: #aaa;
+}
+.pk-result-hands div { padding: 2px 0; }
+.pk-stacks, .bj-stacks {
+  display: flex; flex-direction: column; gap: 4px;
+  background: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px; margin-bottom: 14px;
+}
+.pk-stack, .bj-stack {
+  display: flex; justify-content: space-between; padding: 4px 0;
+  font-size: 14px;
+}
+.pk-stack.elim, .bj-stack.elim { opacity: 0.5; text-decoration: line-through; }
+ 
+/* Game over screen */
+.pk-finished, .bj-finished {
+  background: linear-gradient(145deg, #1a1a4e, #0d0d2b);
+  border: 3px solid gold; border-radius: 14px;
+  padding: 30px 20px; max-width: 500px; margin: 0 auto; text-align: center;
+  box-shadow: 0 0 35px rgba(255,215,0,0.4);
+}
+.pk-finished-title, .bj-finished-title {
+  font-family: 'Bangers', cursive; font-size: 32px; color: gold;
+  letter-spacing: 3px; margin-bottom: 16px;
+  text-shadow: 2px 2px 0 var(--sketch-red), 0 0 20px gold;
+}
+.pk-winner, .bj-winner {
+  font-size: 18px; color: #fff; margin-bottom: 16px;
+}
+.pk-final-stacks, .bj-final-stacks {
+  display: flex; flex-direction: column; gap: 6px;
+  background: rgba(0,0,0,0.3); border-radius: 8px; padding: 14px; margin-bottom: 18px;
+}
+.pk-final-row, .bj-final-row {
+  display: flex; justify-content: space-between; padding: 6px 8px;
+  background: rgba(255,255,255,0.05); border-radius: 4px;
+}
+ 
+/* Mobile poker tweaks */
+@media (max-width: 600px) {
+  .pk-card { width: 36px; height: 52px; }
+  .pk-rank, .pk-suit { font-size: 15px; }
+  .pk-pot { font-size: 18px; }
+  .pk-actions { padding: 8px; }
+  .pk-btn, .bj-btn { font-size: 14px; padding: 8px 14px; letter-spacing: 1px; }
+}
+  
   @media (max-width: 600px) {
     .products { grid-template-columns: 1fr; }
     .testimonial-grid { grid-template-columns: 1fr; }
@@ -1084,7 +1464,7 @@
 
 <!-- chess.js library (for the chess game) -->
 <script src="https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js"></script>
-
+<script src="https://cdn.jsdelivr.net/npm/pokersolver@2.1.4/pokersolver.js"></script>
 <!-- Yarghle Games module -->
 <script src="js/games.js"></script>
 
