@@ -163,7 +163,7 @@
       color: '#ff6ec7',
       category: 'creative',
       maxPlayers: 6,
-      initialState: () => ({ chat: [] }),
+      initialState: () => ({ strokes: [] }),
     },
     skribbl: {
       name: 'Skribbl',
@@ -629,7 +629,14 @@
       case 'connect4':  renderConnect4(wrap);  break;
       case 'checkers':  renderCheckers(wrap);  break;
       case 'chess':     renderChess(wrap);     break;
-      case 'draw':      renderDrawRoom(wrap);  break;
+      case 'draw': {
+        // Drawing Room: only do full render once per session.
+        // Subsequent state updates (e.g. stroke persistence) shouldn't blow away the canvas.
+        if (!$('draw-canvas')) renderDrawRoom(wrap);
+        // No-op on subsequent updates — the canvas is already live and broadcasting
+        // strokes via Supabase. Hydration on join is handled inside renderDrawRoom.
+        break;
+      }
     }
   }
 
@@ -3060,6 +3067,8 @@
     s.roundEndsAt = Date.now() + s.config.drawTime * 1000;
     s.phase = 'drawing';
     s.chatLog = [{ name: 'system', msg: `${me} is drawing!`, type: 'system' }];
+    skLastRenderKey = null;             // force fresh render
+    skHistory = [];                     // clear stroke history for new round
     await pushState(s);
     // Subscribe to draw broadcasts for stroke sync (drawer broadcasts, others receive)
     skribblSubscribeStrokes();
@@ -3069,11 +3078,24 @@
   let skTimerInterval = null;
   let skRevealInterval = null;
 
+  // Track what we've rendered to allow incremental updates
+  let skLastRenderKey = null;
+
   function renderSkribblDrawing(wrap, s) {
     const me = getPlayerName();
     const amDrawer = s.currentDrawer === me;
     const haveGuessed = s.guessers.includes(me);
     const players = currentRoom.players || [];
+
+    // If we're already showing the drawing UI for the same drawer,
+    // do an incremental update (don't blow away the canvas, input, etc.)
+    const renderKey = `${s.currentDrawer}|${s.phase}|${amDrawer}|${haveGuessed}`;
+    if (skLastRenderKey === renderKey && $('sk-canvas')) {
+      // Patch dynamic parts only
+      skribblPatchDynamic(s, amDrawer, haveGuessed, players);
+      return;
+    }
+    skLastRenderKey = renderKey;
 
     const wordDisplay = amDrawer
       ? s.currentWord
@@ -3084,7 +3106,7 @@
         ${skribblHeaderHTML(s)}
         <div class="sk-word-row">
           <span class="sk-word-label">${amDrawer ? '🖌️ Draw:' : (haveGuessed ? '✅ Word:' : 'Guess:')}</span>
-          <span class="sk-word">${esc(wordDisplay || '')}</span>
+          <span class="sk-word" id="sk-word">${esc(wordDisplay || '')}</span>
           <span class="sk-word-len">(${(s.currentWord || '').length} letters)</span>
         </div>
         <div class="sk-timer" id="sk-timer">--</div>
@@ -3116,15 +3138,17 @@
         <div class="sk-chat-log" id="sk-chat-log">
           ${s.chatLog.map(c => skribblChatLineHTML(c)).join('')}
         </div>
-        ${(amDrawer || haveGuessed)
-          ? `<div class="sk-chat-disabled">${amDrawer ? '🖌️ You are drawing — chat is hidden.' : '✅ You guessed it! Wait for others.'}</div>`
-          : `<div class="sk-chat-input-row">
-              <input type="text" id="sk-chat-input" placeholder="Type yer guess..." maxlength="60" autocomplete="off">
-              <button class="pk-btn start" id="sk-chat-send">SEND</button>
-            </div>`}
+        ${amDrawer
+          ? `<div class="sk-chat-disabled">🖌️ You are drawing — watch the guesses!</div>`
+          : (haveGuessed
+              ? `<div class="sk-chat-disabled">✅ You guessed it! Wait for others.</div>`
+              : `<div class="sk-chat-input-row">
+                  <input type="text" id="sk-chat-input" placeholder="Type yer guess..." maxlength="60" autocomplete="off">
+                  <button class="pk-btn start" id="sk-chat-send">SEND</button>
+                </div>`)}
       </div>`;
 
-    html += skribblScoreboardHTML(s, players);
+    html += `<div id="sk-scoreboard-wrap">${skribblScoreboardHTML(s, players)}</div>`;
     html += '</div>';
     wrap.innerHTML = html;
 
@@ -3154,18 +3178,7 @@
 
     // Wire up chat
     if (!amDrawer && !haveGuessed) {
-      const sendBtn = $('sk-chat-send');
-      const input = $('sk-chat-input');
-      const send = () => {
-        const txt = (input.value || '').trim();
-        if (txt) skribblSubmitGuess(txt);
-        input.value = '';
-      };
-      if (sendBtn) sendBtn.addEventListener('click', send);
-      if (input) {
-        input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
-        input.focus();
-      }
+      skribblWireChatInput();
     }
 
     // Auto-scroll chat
@@ -3174,6 +3187,43 @@
 
     // Start timer + reveal logic (host only, to avoid duplicate updates)
     skribblStartTimers(s);
+  }
+
+  // Patch dynamic regions (chat log, word reveal, scoreboard) without
+  // destroying canvas, input, or focus.
+  function skribblPatchDynamic(s, amDrawer, haveGuessed, players) {
+    // Word display
+    const wordEl = $('sk-word');
+    if (wordEl) {
+      const display = amDrawer ? s.currentWord : (haveGuessed ? s.currentWord : s.revealedWord);
+      wordEl.textContent = display || '';
+    }
+    // Chat log
+    const chatLog = $('sk-chat-log');
+    if (chatLog) {
+      // Was the user near the bottom? If so, autoscroll after update.
+      const wasNearBottom = (chatLog.scrollTop + chatLog.clientHeight + 30) >= chatLog.scrollHeight;
+      chatLog.innerHTML = s.chatLog.map(c => skribblChatLineHTML(c)).join('');
+      if (wasNearBottom) chatLog.scrollTop = chatLog.scrollHeight;
+    }
+    // Scoreboard
+    const scoreWrap = $('sk-scoreboard-wrap');
+    if (scoreWrap) scoreWrap.innerHTML = skribblScoreboardHTML(s, players);
+  }
+
+  function skribblWireChatInput() {
+    const sendBtn = $('sk-chat-send');
+    const input = $('sk-chat-input');
+    if (!input || !sendBtn) return;
+    const send = () => {
+      const txt = (input.value || '').trim();
+      if (txt) skribblSubmitGuess(txt);
+      input.value = '';
+      input.focus();
+    };
+    sendBtn.addEventListener('click', send);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+    input.focus();
   }
 
   function skribblHeaderHTML(s) {
@@ -3221,6 +3271,10 @@
 
     // Re-paint stroke history (kept across re-renders within same round)
     skHistory.forEach(stroke => skribblPaintStroke(stroke, false));
+
+    // EVERYONE subscribes to the stroke channel when drawing phase starts.
+    // Drawer broadcasts strokes; others receive them.
+    if (!skDrawChannel) skribblSubscribeStrokes();
 
     if (amDrawer) {
       skCanvas.addEventListener('pointerdown', skribblPointerDown);
@@ -3335,9 +3389,14 @@
       const remaining = Math.max(0, Math.ceil((room.state.roundEndsAt - Date.now()) / 1000));
       const timerEl = $('sk-timer');
       if (timerEl) timerEl.textContent = remaining + 's';
-      // Host triggers round-end
-      if (remaining <= 0 && currentRoom.host_name === getPlayerName()) {
-        skribblEndRound('time');
+
+      // Host triggers round-end on time-up OR everyone guessed
+      if (currentRoom.host_name === getPlayerName()) {
+        const players = currentRoom.players || [];
+        const nonDrawers = players.filter(p => p.name !== room.state.currentDrawer);
+        const allGuessed = nonDrawers.length > 0 && room.state.guessers.length >= nonDrawers.length;
+        if (remaining <= 0)        skribblEndRound('time');
+        else if (allGuessed)       skribblEndRound('all-guessed');
       }
     }, 250);
 
@@ -3400,16 +3459,8 @@
       s.scores[s.currentDrawer] = (s.scores[s.currentDrawer] || 0) + drawerEarn;
       s.roundScores[s.currentDrawer] = (s.roundScores[s.currentDrawer] || 0) + drawerEarn;
       s.chatLog.push({ name: me, msg: '', type: 'correct' });
-
-      // If everyone has guessed → end round
-      const players = currentRoom.players || [];
-      const nonDrawers = players.filter(p => p.name !== s.currentDrawer);
-      if (s.guessers.length >= nonDrawers.length) {
-        await pushState(s);
-        // Host transitions to roundend
-        if (currentRoom.host_name === me) skribblEndRound('all-guessed');
-        return;
-      }
+      // (Round-end transition is handled by host's timer interval,
+      // which checks guessers.length >= nonDrawers.length each tick.)
     } else {
       // Incorrect: check for "close" (1 character off)
       const isClose = skribblIsClose(guess, target);
@@ -3440,6 +3491,7 @@
     s.endReason = reason;
     if (skTimerInterval) { clearInterval(skTimerInterval); skTimerInterval = null; }
     if (skRevealInterval) { clearInterval(skRevealInterval); skRevealInterval = null; }
+    skLastRenderKey = null;
     skribblCleanupCanvas();
     await pushState(s);
   }
@@ -3552,7 +3604,10 @@
     fitDrawCanvas();
     window.addEventListener('resize', fitDrawCanvas);
 
-    // Restore any past strokes from buffer
+    // Hydrate stroke history from room state (so new joiners see existing art)
+    const stateStrokes = (currentRoom && currentRoom.state && Array.isArray(currentRoom.state.strokes))
+      ? currentRoom.state.strokes : [];
+    drawHistory = stateStrokes.slice();
     drawHistory.forEach(s => paintStroke(s, false));
 
     // Tool toggle (brush / eraser)
@@ -3630,7 +3685,31 @@
     lastPt = pt;
     if (drawChannel) drawChannel.send({ type: 'broadcast', event: 'stroke', payload: stroke });
   }
-  function dPointerUp() { drawing = false; lastPt = null; }
+  function dPointerUp() {
+    drawing = false;
+    lastPt = null;
+    // Persist strokes to room state so new joiners can see them.
+    // We do this on pointerUp (end of stroke), not every move, to avoid hammering the DB.
+    persistDrawStrokes();
+  }
+
+  // Debounced state save (avoid pushState storms during rapid drawing)
+  let drawPersistTimeout = null;
+  function persistDrawStrokes() {
+    if (drawPersistTimeout) return;     // already pending
+    drawPersistTimeout = setTimeout(async () => {
+      drawPersistTimeout = null;
+      if (!SUPA() || !currentRoomId) return;
+      // Cap at last 2000 strokes to keep state size reasonable.
+      const trimmed = drawHistory.slice(-2000);
+      try {
+        await SUPA()
+          .from('game_rooms')
+          .update({ state: { strokes: trimmed } })
+          .eq('id', currentRoomId);
+      } catch (e) { console.warn('Stroke persist failed:', e); }
+    }, 800);
+  }
 
   function paintStroke(stroke, addToHistory) {
     if (!drawCtx) return;
@@ -3653,11 +3732,17 @@
       drawCtx.fillRect(0, 0, r.width, r.height);
     }
     if (drawChannel) drawChannel.send({ type: 'broadcast', event: 'clear', payload: {} });
+    // Also persist the cleared state to DB
+    if (SUPA() && currentRoomId) {
+      SUPA().from('game_rooms').update({ state: { strokes: [] } }).eq('id', currentRoomId)
+        .then(() => {}, e => console.warn('Clear persist failed:', e));
+    }
   }
 
   function subscribeDrawBroadcast() {
     if (drawChannel) { SUPA().removeChannel(drawChannel); drawChannel = null; }
-    drawHistory = [];
+    // NOTE: drawHistory is hydrated from currentRoom.state.strokes in renderDrawRoom,
+    // so we don't reset it here.
     drawChannel = SUPA()
       .channel('draw-' + currentRoomId, { config: { broadcast: { self: false } } })
       .on('broadcast', { event: 'stroke' }, payload => {
